@@ -1,0 +1,203 @@
+@font-face {
+    font-family: 'PTSansNarrowRegular';
+    src: url('PTN57F-webfont.eot');
+    src: url('PTN57F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTN57F-webfont.woff') format('woff'),
+         url('PTN57F-webfont.ttf') format('truetype'),
+         url('PTN57F-webfont.svg#PTSansNarrowRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansCaptionBold';
+    src: url('PTC75F-webfont.eot');
+    src: url('PTC75F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTC75F-webfont.woff') format('woff'),
+         url('PTC75F-webfont.ttf') format('truetype'),
+         url('PTC75F-webfont.svg#PTSansCaptionBold') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansCaptionRegular';
+    src: url('PTC55F-webfont.eot');
+    src: url('PTC55F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTC55F-webfont.woff') format('woff'),
+         url('PTC55F-webfont.ttf') format('truetype'),
+         url('PTC55F-webfont.svg#PTSansCaptionRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansBoldItalic';
+    src: url('PTS76F-webfont.eot');
+    src: url('PTS76F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTS76F-webfont.woff') format('woff'),
+         url('PTS76F-webfont.ttf') format('truetype'),
+         url('PTS76F-webfont.svg#PTSansBoldItalic') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansBold';
+    src: url('PTS75F-webfont.eot');
+    src: url('PTS75F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTS75F-webfont.woff') format('woff'),
+         url('PTS75F-webfont.ttf') format('truetype'),
+         url('PTS75F-webfont.svg#PTSansBold') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansItalic';
+    src: url('PTS56F-webfont.eot');
+    src: url('PTS56F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTS56F-webfont.woff') format('woff'),
+         url('PTS56F-webfont.ttf') format('truetype'),
+         url('PTS56F-webfont.svg#PTSansItalic') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansRegular';
+    src: url('PTS55F-webfont.eot');
+    src: url('PTS55F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTS55F-webfont.woff') format('woff'),
+         url('PTS55F-webfont.ttf') format('truetype'),
+         url('PTS55F-webfont.svg#PTSansRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'PTSansNarrowBold';
+    src: url('PTN77F-webfont.eot');
+    src: url('PTN77F-webfont.eot?#iefix') format('embedded-opentype'),
+         url('PTN77F-webfont.woff') format('woff'),
+         url('PTN77F-webfont.ttf') format('truetype'),
+         url('PTN77F-webfont.svg#PTSansNarrowBold') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'ColaborateThinRegular';
+    src: url('ColabThi-webfont.eot');
+    src: url('ColabThi-webfont.eot?#iefix') format('embedded-opentype'),
+         url('ColabThi-webfont.woff') format('woff'),
+         url('ColabThi-webfont.ttf') format('truetype'),
+         url('ColabThi-webfont.svg#ColaborateThinRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'ColaborateLightRegular';
+    src: url('ColabLig-webfont.eot');
+    src: url('ColabLig-webfont.eot?#iefix') format('embedded-opentype'),
+         url('ColabLig-webfont.woff') format('woff'),
+         url('ColabLig-webfont.ttf') format('truetype'),
+         url('ColabLig-webfont.svg#ColaborateLightRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'ColaborateRegular';
+    src: url('ColabReg-webfont.eot');
+    src: url('ColabReg-webfont.eot?#iefix') format('embedded-opentype'),
+         url('ColabReg-webfont.woff') format('woff'),
+         url('ColabReg-webfont.ttf') format('truetype'),
+         url('ColabReg-webfont.svg#ColaborateRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'ColaborateMediumRegular';
+    src: url('ColabMed-webfont.eot');
+    src: url('ColabMed-webfont.eot?#iefix') format('embedded-opentype'),
+         url('ColabMed-webfont.woff') format('woff'),
+         url('ColabMed-webfont.ttf') format('truetype'),
+         url('ColabMed-webfont.svg#ColaborateMediumRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'ColaborateBoldRegular';
+    src: url('ColabBol-webfont.eot');
+    src: url('ColabBol-webfont.eot?#iefix') format('embedded-opentype'),
+         url('ColabBol-webfont.woff') format('woff'),
+         url('ColabBol-webfont.ttf') format('truetype'),
+         url('ColabBol-webfont.svg#ColaborateBoldRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'CantarellRegular';
+    src: url('Cantarell-Regular-webfont.eot');
+    src: url('Cantarell-Regular-webfont.eot?#iefix') format('embedded-opentype'),
+         url('Cantarell-Regular-webfont.woff') format('woff'),
+         url('Cantarell-Regular-webfont.ttf') format('truetype'),
+         url('Cantarell-Regular-webfont.svg#CantarellRegular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'CantarellOblique';
+    src: url('Cantarell-Oblique-webfont.eot');
+    src: url('Cantarell-Oblique-webfont.eot?#iefix') format('embedded-opentype'),
+         url('Cantarell-Oblique-webfont.woff') format('woff'),
+         url('Cantarell-Oblique-webfont.ttf') format('truetype'),
+         url('Cantarell-Oblique-webfont.svg#CantarellOblique') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'CantarellBold';
+    src: url('Cantarell-Bold-webfont.eot');
+    src: url('Cantarell-Bold-webfont.eot?#iefix') format('embedded-opentype'),
+         url('Cantarell-Bold-webfont.woff') format('woff'),
+         url('Cantarell-Bold-webfont.ttf') format('truetype'),
+         url('Cantarell-Bold-webfont.svg#CantarellBold') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
+
+@font-face {
+    font-family: 'CantarellBoldOblique';
+    src: url('Cantarell-BoldOblique-webfont.eot');
+    src: url('Cantarell-BoldOblique-webfont.eot?#iefix') format('embedded-opentype'),
+         url('Cantarell-BoldOblique-webfont.woff') format('woff'),
+         url('Cantarell-BoldOblique-webfont.ttf') format('truetype'),
+         url('Cantarell-BoldOblique-webfont.svg#CantarellBoldOblique') format('svg');
+    font-weight: normal;
+    font-style: normal;
+
+}
