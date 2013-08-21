@@ -1,6 +1,6 @@
 import os,sys
 # This needs pygtk 2.9 installed.
-sys.path[:0] = ['/usr/local/lib/python2.4/site-packages/gtk-2.0']
+#sys.path[:0] = ['/usr/local/lib/python2.4/site-packages/gtk-2.0']
 import gtk,gobject,pygtk,webkit,cairo
 pygtk.require('2.0')
 import json
@@ -26,7 +26,7 @@ class Droplet:
 	#
 	# @param 	widget	gtk.Widget object
 	# @return 	bool	success
-	def make_transparent(self, widget):
+	def make_transparent (self, widget):
 		screen = widget.get_screen()
 		colormap = screen.get_rgba_colormap()
 		if colormap != None:
@@ -34,6 +34,19 @@ class Droplet:
 			return True
 		else:
 			return False
+	
+	#from pygtk documentation
+	def transparent_expose (self, widget, event):
+		cr = widget.window.cairo_create()
+		cr.set_operator(cairo.OPERATOR_CLEAR)
+
+		region = gtk.gdk.region_rectangle(event.area)
+		print region
+		cr.region(region)
+		cr.fill()
+		
+		return False
+	
 			
 	#TODO: FALLBACK OLD SCHOOL!!! get background, paint it on the window
 	
@@ -140,12 +153,15 @@ class Droplet:
 		window.set_skip_taskbar_hint(manifest.skip_taskbar)
 		window.set_skip_pager_hint(manifest.skip_pager)
 		window.set_decorated(manifest.decorated)
-		
+
+		window.connect('expose-event', self.transparent_expose)		
+
 		if manifest.transparent:
 			self.make_transparent(window)
+
 		
 		window.set_title(manifest.title)
-		
+
 		if manifest.stick:
 			window.stick()
 		
@@ -161,7 +177,8 @@ class Droplet:
 		browser.set_transparent(manifest.transparent)
 		browser.props.settings.props.enable_default_context_menu = manifest.default_context_menu
 		browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
-	
+		browser.connect('expose-event', self.transparent_expose)
+
 		if not module == None:
 			def on_title_change_wrapper(w, e, title): self.recieve(title)
 			browser.connect('title-changed', on_title_change_wrapper)
@@ -171,8 +188,7 @@ class Droplet:
 				if e.button == 1:
 					self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
 			browser.connect('button-press-event', drag_wrapper)
-	
-		
+
 		window.add(browser)
 			
 		window.resize(manifest.width, manifest.height)
