@@ -15,7 +15,7 @@ class Manifest:
 	def dump_manifest(self, path):
 		mfile = open(path, 'w')
 		#TODO: TRY EXCEPT
-		mfile.write(json.dumps(self.dict))
+		mfile.write(json.dumps(self.dict, indent=4))
 		mfile.close()
 
 	def __init__(self, path):

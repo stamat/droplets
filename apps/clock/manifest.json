@@ -1,1 +1,16 @@
-{"opacity": 1, "title": "Clock", "skip_pager": true, "below": true, "handle_enabled": true, "height": 140, "width": 140, "drag": false, "stick": true, "y": 387, "x": 357, "decorated": false, "skip_taskbar": true, "transparent": true}
+{
+    "opacity": 1, 
+    "title": "Clock", 
+    "skip_pager": true, 
+    "drag": true, 
+    "handle_enabled": false, 
+    "height": 140, 
+    "width": 140, 
+    "below": true, 
+    "stick": true, 
+    "y": 61, 
+    "x": 1079, 
+    "decorated": false, 
+    "skip_taskbar": true, 
+    "transparent": true
+}

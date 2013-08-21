@@ -1,1 +1,15 @@
-{"skip_taskbar": true, "title": "droplet-handle", "skip_pager": false, "handle_enabled": false, "height": 20, "width": 100, "stick": true, "above": true, "y": 6, "x": 210, "hidden": true, "decorated": false, "transparent": true}
+{
+    "title": "droplet-handle", 
+    "skip_pager": false, 
+    "handle_enabled": false, 
+    "height": 20, 
+    "decorated": false, 
+    "width": 100, 
+    "stick": true, 
+    "above": true, 
+    "y": -90, 
+    "x": 1166, 
+    "skip_taskbar": true, 
+    "hidden": true, 
+    "transparent": true
+}

@@ -5,6 +5,8 @@ import gtk,gobject,pygtk,webkit,cairo
 pygtk.require('2.0')
 import json
 import urllib
+import os
+import imp
 from manifest import Manifest
 
 if gtk.pygtk_version < (2,9,0):
@@ -41,7 +43,6 @@ class Droplet:
 		cr.set_operator(cairo.OPERATOR_CLEAR)
 
 		region = gtk.gdk.region_rectangle(event.area)
-		print region
 		cr.region(region)
 		cr.fill()
 		
@@ -125,10 +126,10 @@ class Droplet:
 		obj.connect(event, self.event_to_json, callback)
 
 	def droplet_drag(self, button, x, y, time):
-		self.window.begin_move_drag(button, x, y, time)
+		self.window.begin_move_drag(button, int(x), int(y), time)
 		
 	def droplet_move(self, x, y):
-		self.window.move(x, y)
+		self.window.move(int(x), int(y))
 	
 	def droplet_deactivate(self, w=None, e=None):
 		self.on_focus_out()
@@ -154,7 +155,7 @@ class Droplet:
 		window.set_skip_pager_hint(manifest.skip_pager)
 		window.set_decorated(manifest.decorated)
 
-		window.connect('expose-event', self.transparent_expose)		
+		#window.connect('expose-event', self.transparent_expose)		
 
 		if manifest.transparent:
 			self.make_transparent(window)
@@ -175,7 +176,20 @@ class Droplet:
 		
 		browser = webkit.WebView()
 		browser.set_transparent(manifest.transparent)
-		browser.props.settings.props.enable_default_context_menu = manifest.default_context_menu
+		
+		settings = browser.get_settings()
+		settings.set_property('enable-default-context-menu', manifest.default_context_menu)
+		settings.set_property('enable-webaudio', 1)
+		settings.set_property('enable-webgl', 1)
+		settings.set_property('default-encoding', 'utf8')
+		settings.set_property('enable-accelerated-compositing', 1)
+		if manifest.origin is 'local':	
+			settings.set_property('enable-universal-access-from-file-uris', 1)
+		settings.set_property('enable-plugins', 0)
+		settings.set_property('enable-page-cache', 1)
+
+		#print browser.can_go_back_or_forward()
+
 		browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
 		browser.connect('expose-event', self.transparent_expose)
 
@@ -205,10 +219,23 @@ class Droplet:
 		return window, browser
 	
 	#### TODO: NOT SURE IF SAFE!?
-	def event_to_json(self, w, e, f):
-		dict = self.attrs_to_dict(e)
-		dict['type'] = e.type.value_name
-		self.browser.execute_script(f+"""('"""+str(json.dumps(dict))+"""');""")
+	def event_to_json(self, w, *args):
+		dict = {}
+		#on gtk event
+		if(isinstance(args[0], gtk.gdk.Event)):
+			dict = self.attrs_to_dict(args[0])
+			dict['type'] = args[0].type.value_name
+		elif(isinstance(args[0], gtk.gdk.DragContext)): #on drag context
+			print args[0].drag_get_selection()
+			dict = {
+				'targets': args[0].targets,
+				'uris': args[3].get_uris(),
+				'x': args[1],
+				'y': args[2],
+				'text': args[3].get_text()
+			}
+		self.browser.execute_script(args[len(args)-1]+"""('"""+str(json.dumps(dict))+"""');""")
+		
 	
 	def attrs_to_dict(self, obj):
 		attribs = dir(obj)
@@ -225,38 +252,44 @@ class Droplet:
 		if origin == 'local':
 			file = os.path.abspath(source)
 			source = 'file://' + urllib.pathname2url(file)
-			browser.load_uri(source)
+		print source
+		browser.load_uri(source)
 	
-	def import_from_uri(self, path, executable):
-		try:
-			splited_path = path[:-1].split('/')
-			current_path = ''
-			module_path = ''
+	def importFromURI(self, uri, absl=False):
+		if not absl:
+			uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
+		path, fname = os.path.split(uri)
+		mname, ext = os.path.splitext(fname)
 		
-			for v in splited_path:
-				module_path += v + '.'
-				current_path += v + '/'
-				if not os.path.exists(current_path+'__init__.py'):
-					f = open(current_path+'__init__.py', 'w+')
-					f.close()
-		
-			module = __import__(module_path+executable, fromlist=[module_path[:-1]])
-		except ImportError:
-			module = None
-	
-		return module
+	 	no_ext = os.path.join(path,mname)
+	 	
+		if os.path.exists(no_ext + '.pyc'):
+			try:
+				return imp.load_compiled(mname, no_ext + '.pyc')
+			except:
+				pass
+		if os.path.exists(no_ext + '.py'):
+			try:
+				return imp.load_source(mname, no_ext + '.py')
+			except:
+				pass
 			
 	def init_widget(self, path, custom_manifest = None):
 		manifest_file = 'manifest.json' #XXX: lol
 	
 		if path[len(path)-1] != '/':
 			path = path + '/'
-	
-		manifest = Manifest(path+manifest_file)
+			
+		path_to_manifest = None
+		if custom_manifest is not None:
+			path_to_manifest = custom_manifest
+		else:
+			path_to_manifest = path+manifest_file
+			
+		manifest = Manifest(path_to_manifest)
 		self.temp['x'] = manifest.x
 		self.temp['y'] = manifest.y
-		#TODO: If executable ends with .py? remove py!
-		module = self.import_from_uri(path, manifest.executable)
+		module = self.importFromURI(os.path.join(path, manifest.executable), True)
 		window,browser = self.prepare_widget(manifest, module)
 		#TODO: Check if the file is local file!
 		self.load_widget(browser, manifest.origin, path+manifest.source)

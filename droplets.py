@@ -20,12 +20,12 @@ def main(args):
 #	global path
 #	if path[len(path)-1] != '/':
 #		path = path + '/'
-		
+	
+	mfest = None
 	try:	
 		mfest = sys.argv[2]
-		print mfest
 	except IndexError:
-		print 'lol'
+		pass
 	
 #	menu = gtk.Menu()
 #	menu.attach_to_widget(browser, test)
@@ -53,7 +53,7 @@ def main(args):
 	def show_handle():
 		print 'lol'
 		handle.window.show_all()
-		handle.droplet_move(mainDrop.temp['x'],mainDrop.temp['y']-handle.manifest.height+1)
+		handle.droplet_move(mainDrop.temp['x'], mainDrop.temp['y']-handle.manifest.height+1)
 	def hide_handle():
 		print 'omg'
 		if flag:
@@ -83,7 +83,7 @@ def main(args):
 		t.start()
 		return t
 		
-	mainDrop = Droplet(path)
+	mainDrop = Droplet(path, mfest)
 	if mainDrop.manifest.handle_enabled:
 		def show_handle_wrapper(w, e): show_handle()
 		mainDrop.window.connect('enter-notify-event', show_handle_wrapper)
@@ -105,10 +105,12 @@ def main(args):
 				handle.window.connect('configure-event', follow)
 				
 		handle.browser.connect('button-press-event', handle_press_wrapper)
-		def handle_release_wrapper(w, e): 
-			print e
-			#handle.window.disconnect('configure-event')
-		mainDrop.browser.connect('event', handle_release_wrapper)
+		#handle.window.disconnect('configure-event')
+		
+		def banRequests(web_view,frame,request,mimetype,policy_decision):
+			policy_decision.ignore()
+
+		mainDrop.browser.connect('navigation-policy-decision-requested', banRequests)
 		
 		
 

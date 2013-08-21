@@ -19,9 +19,15 @@
 		console.log(json)
 	}
 	
+	function ondrop(json) {
+		console.log(json)
+	}
+	
 	droplets.send('{"method":"hello","args":{"msg":"stupid"}}');
 	
 	droplets.send('{"method":"droplet_connect","args":{"object":"browser","event":"button-press-event","callback":"gtk_event_recieve"}}');
+	
+	droplets.send('{"method":"droplet_connect","args":{"object":"window","event":"drag-data-received","callback":"ondrop"}}');
 	
     draw();
    
