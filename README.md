@@ -1,4 +1,4 @@
 droplets
 ========
 
-Linux widgets and webkit gui frame
+Linux widgets through webkit gui frame

@@ -28,8 +28,8 @@ $(document).ready(function(){
 		}
 	);
 	
-	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user='+user+'&limit='+limit+'&api_key='+ api_key, parseRecentTracks);
-	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getinfo&user='+user+'&api_key='+ api_key, parseInfo);
+	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user='+user+'&limit='+limit+'&api_key='+ api_key+'&format=json', parseRecentTracks);
+	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getinfo&user='+user+'&api_key='+ api_key+'&format=json', parseInfo);
 
 });
 
@@ -59,9 +59,7 @@ function trackHtml(id, second) {
 			'</a></li>'
 }
 
-function parseRecentTracks(text) {
-	var xml = text;
-	var json = $.xml2json(xml);
+function parseRecentTracks(json) {
 	for(var i = 0; i < json.recenttracks.track.length; i++ ) {
 		var current = json.recenttracks.track[i];
 		var name = current.name
@@ -76,19 +74,17 @@ function parseRecentTracks(text) {
 		else
 			date = parseTime(current.date.uts);
 			
-		var image = current.image.text;
+		var image = current.image[0]['#text'];
 		if(image == undefined)
 			image = 'http://dl.dropbox.com/u/2808807/projects/lastbadge/no_image.png';
 
-		addTrackData(i, name, current.artist.text, image, current.url, date);
+		addTrackData(i, name, current.artist['#text'], image, current.url, date);
 	}
 }
 
-function parseInfo(text) {
-	var xml = text;
-	var json = $.xml2json(xml);
+function parseInfo(json) {
 	$('#lastbadge .profile-url').attr('href', json.user.url).attr('title', json.user.realname);
-	$('#lastbadge .user .avatar img').attr('src', json.user.image.text);
+	$('#lastbadge .user .avatar img').attr('src', json.user.image[0]['#text']);
 	$('#lastbadge .user .name .data').html(json.user.name);
 	$('#lastbadge .user .total .data').html(json.user.playcount);
 	
@@ -140,7 +136,7 @@ function ajax(method, url, callback, data) {
 	request.open(method, url, true); 
 	request.onload = function(e) {
 		if (request.status == 200)
-			callback(request.responseText);
+			callback(JSON.parse(request.responseText));
 	}
 	
 	if(data != undefined)

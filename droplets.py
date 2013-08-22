@@ -14,6 +14,7 @@
 #TODO: Multi window opacity in the same gtk thread, last one is fully transparent
 
 import sys, gtk, threading
+import re
 from droplets.droplet import Droplet
 			
 def main(args):
@@ -27,20 +28,7 @@ def main(args):
 	except IndexError:
 		pass
 	
-#	menu = gtk.Menu()
-#	menu.attach_to_widget(browser, test)
-#	delete_menu = gtk.MenuItem("Delete Task")
-#	menu.append(delete_menu)
-#	delete_menu.show()
-#	
-#	delete_menu.connect('button-press-event', test)
-#	
-#	def _on_button_press_event(self, event, widget):
-#		if event.button == 3:
-#			widget.popup(None, None, None, 0, event.time)
-#			pass
-#	
-#	browser.connect('button_press_event',_on_button_press_event, menu)
+	
 	#global path
 	path = sys.argv[1]
 	#global manifest, module, window, browser
@@ -53,11 +41,16 @@ def main(args):
 	def show_handle():
 		print 'lol'
 		handle.window.show_all()
-		handle.droplet_move(mainDrop.temp['x'], mainDrop.temp['y']-handle.manifest.height+1)
+		x,y = mainDrop.window.get_position()
+		#print x, y, handle.manifest.height
+		handle.droplet_move(x, y-handle.manifest.height+1)
+		
 	def hide_handle():
 		print 'omg'
+		print flag
 		if flag:
 			handle.window.hide_all()
+			
 	def enter_handle():
 		print 'zomg'
 		flag = False
@@ -101,19 +94,64 @@ def main(args):
 			if e.button == 1:
 				handle.droplet_drag(e.button, int(e.x_root), int(e.y_root), e.time)
 				def follow(w, e):
-					mainDrop.window.move(e.x, e.y-handle.manifest.height+1)
+					mainDrop.window.move(e.x, e.y+handle.manifest.height-1)
 				handle.window.connect('configure-event', follow)
 				
 		handle.browser.connect('button-press-event', handle_press_wrapper)
-		#handle.window.disconnect('configure-event')
-		
-		def banRequests(web_view,frame,request,mimetype,policy_decision):
-			policy_decision.ignore()
-
-		mainDrop.browser.connect('navigation-policy-decision-requested', banRequests)
+		# handle.window.disconnect('configure-event')
 		
 		
-
+	def toggleMove(*args):
+		label = args[0].get_label()
+		parsed = re.match('(?P<pref>.*:\s*)(?P<state>.*)$', label)
+		state = parsed.group('state')
+		pref = parsed.group('pref')
+		
+		if state == 'Off':
+			mainDrop.droplet_drag_disable()
+			args[0].set_label(pref+'On')
+		elif state == 'On':
+			mainDrop.droplet_drag_enable()
+			args[0].set_label(pref+'Off')
+	
+	def detachFn(*args):
+		print args
+	
+	#TODO: ONLY ON WIDGETS!!! toggle bool in manifest
+	menu = gtk.Menu()
+	remove_menu = gtk.Menu()
+	menu.attach_to_widget(mainDrop.browser, detachFn) ##TODO: see what a fuckin' detach function is
+	
+	movetoggle = gtk.MenuItem("Move: Off")
+	properties = gtk.MenuItem("Properties")
+	
+	remove_submenu = gtk.MenuItem("Deactivate")
+	remove_submenu.set_submenu(remove_menu)
+	remove = gtk.MenuItem("X")
+	remove_menu.append(remove);
+	
+	menu.append(movetoggle)
+	menu.append(properties)
+	menu.append(remove_submenu)
+	movetoggle.show()
+	properties.show()
+	remove.show()
+	remove_submenu.show()
+	
+	if not mainDrop.manifest.drag:
+			movetoggle.set_label("Move: On")
+	
+	movetoggle.connect('button-press-event', toggleMove)
+	remove.connect('button-press-event', mainDrop.droplet_deactivate)
+	
+	
+	def _on_button_press_event(self, event, widget):
+		if event.button == 3:
+			widget.popup(None, None, None, 0, event.time)
+			pass
+	
+	mainDrop.browser.connect('button_press_event',_on_button_press_event, menu)
+	
 	#main3 = Droplet(path)
 	#main4 = Droplet(path)
 	#print dir(mainDrop.window.get_display())

@@ -7,6 +7,7 @@ import json
 import urllib
 import os
 import imp
+import re
 from manifest import Manifest
 
 if gtk.pygtk_version < (2,9,0):
@@ -20,6 +21,7 @@ class Droplet:
 	module = None
 	path = None
 	temp = {'x':0, 'y':0}
+	drag_handler_id = None
 	
 	
 	##
@@ -48,17 +50,6 @@ class Droplet:
 		
 		return False
 	
-			
-	#TODO: FALLBACK OLD SCHOOL!!! get background, paint it on the window
-	
-#	def transparent_oldschool(self, widget):
-#		cr = widget.cairo_create()
-#		cr.set_operator(cairo.OPERATOR_CLEAR)
-#		region = gtk.gdk.region_rectangle(0, 0, self.manifest.width, self.manifest.height)
-#		cr.region(region)
-#		cr.fill()
-#		return False
-	
 
 
 	##
@@ -68,8 +59,7 @@ class Droplet:
 	# @param	w	gtk.Window object
 	# @param	e	gtk.gdk.Event object
 	def on_configure(self,w, e):
-		self.temp['x'] = e.x
-		self.temp['y'] = e.y
+		self.temp['x'], self.temp['y'] = w.get_position()
 
 
 	##
@@ -99,17 +89,16 @@ class Droplet:
 	#			}
 	#	}
 	# 
-	# @param	msg		serialized JSON
+	# @param	msg		 JSON string
 	def recieve(self, msg):
-		if msg != 'null':
-			#TODO try and catch all data passed by other developers
+		if msg != 'null' and self.manifest.origin == 'local':
+			#TODO TRY AND CATCH all data passed by other developers
 			packet = json.loads(msg)
 			if packet['method'].startswith('droplet_'):
-				#### TODO: NOT SURE IF SAFE!?
 				fn = getattr(self, packet['method'])
 			else:
 				fn = getattr(self.module, packet['method'])
-				#### TODO: NOT SURE IF SAFE!?
+				
 				if self.dict_key_exists(packet['args'], 'gtk'):
 					packet['args']['gtk'] = gtk
 				if self.dict_key_exists(packet['args'], 'browser'):
@@ -127,7 +116,23 @@ class Droplet:
 
 	def droplet_drag(self, button, x, y, time):
 		self.window.begin_move_drag(button, int(x), int(y), time)
-		
+	
+	def drag_event_wrapper(self, w, e): 
+		if e.button == 1:
+			self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
+	
+	def droplet_drag_enable(self, browser=None, manifest=None):
+		if browser is None: browser = self.browser
+		if manifest is None: manifest = self.manifest
+		self.drag_handler_id = browser.connect('button-press-event', self.drag_event_wrapper)
+		manifest.drag = True
+	
+	def droplet_drag_disable(self, browser=None, manifest=None):
+		if browser is None: browser = self.browser
+		if manifest is None: manifest = self.manifest
+		browser.disconnect(self.drag_handler_id)
+		manifest.drag = False
+	
 	def droplet_move(self, x, y):
 		self.window.move(int(x), int(y))
 	
@@ -137,9 +142,7 @@ class Droplet:
 		raise SystemExit	
 
 	def dict_key_exists(self, dict, key):
-		if key in dict:
-			return True
-		return False
+		return key in dict
 	
 	def send(self, msg):
 		self.browser.execute_script('droplets.recieve("'+str(msg)+'");')
@@ -178,30 +181,56 @@ class Droplet:
 		browser.set_transparent(manifest.transparent)
 		
 		settings = browser.get_settings()
+		
+		#XXX: Should it be always false?
 		settings.set_property('enable-default-context-menu', manifest.default_context_menu)
 		settings.set_property('enable-webaudio', 1)
 		settings.set_property('enable-webgl', 1)
 		settings.set_property('default-encoding', 'utf8')
 		settings.set_property('enable-accelerated-compositing', 1)
-		if manifest.origin is 'local':	
+		if manifest.origin == 'local':	
 			settings.set_property('enable-universal-access-from-file-uris', 1)
 		settings.set_property('enable-plugins', 0)
 		settings.set_property('enable-page-cache', 1)
 
 		#print browser.can_go_back_or_forward()
 
-		browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
+		if manifest.origin == 'local': browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
 		browser.connect('expose-event', self.transparent_expose)
 
-		if not module == None:
+		if module != None and manifest.origin == 'local':
 			def on_title_change_wrapper(w, e, title): self.recieve(title)
 			browser.connect('title-changed', on_title_change_wrapper)
-	
+		
 		if manifest.drag:
-			def drag_wrapper(w, e): 
-				if e.button == 1:
-					self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
-			browser.connect('button-press-event', drag_wrapper)
+			self.droplet_drag_enable(browser, manifest)
+		
+		
+		
+		#TODO: Widgets can be either completely local or completely remote in a sense of resources. A web widget cannot have a communication with the system, a local widget cannot have a communication to the web through HTTP, only through python interface, thus disabling a chance that it can accidentaly load malicius scripts that can be changed by the third party
+		# Web widgets have alerts and popups blocked completely.
+		# In every local python script there will be enabled a function for curl requests and responses and a way to store data
+		def banRemoteNavig (web_view, frame, request, navigation_action, policy_decision):
+			if not request.get_uri().startswith('file://'):
+				policy_decision.ignore()
+				return True
+		
+		if manifest.origin == 'local': browser.connect('navigation-policy-decision-requested', banRemoteNavig)
+		
+		def banRemoteRequests (web_view, frame, web_resource, request, response):
+			if not request.get_uri().startswith('file://'):
+				request.set_uri('about:blank')
+				
+		if manifest.origin == 'local': browser.connect('resource-request-starting', banRemoteRequests)
+		
+		def banOtherMime (web_view, frame, request, mimetype, policy_decision):
+			if mimetype != 'text/html':
+				policy_decision.ignore()
+				return True
+			
+		browser.connect('mime-type-policy-decision-requested', banOtherMime)
+		
+		
 
 		window.add(browser)
 			
@@ -249,10 +278,9 @@ class Droplet:
 		return result
 	
 	def load_widget(self, browser, origin, source):
-		if origin == 'local':
+		if origin != 'hosted':
 			file = os.path.abspath(source)
 			source = 'file://' + urllib.pathname2url(file)
-		print source
 		browser.load_uri(source)
 	
 	def importFromURI(self, uri, absl=False):
@@ -291,7 +319,7 @@ class Droplet:
 		self.temp['y'] = manifest.y
 		module = self.importFromURI(os.path.join(path, manifest.executable), True)
 		window,browser = self.prepare_widget(manifest, module)
-		#TODO: Check if the file is local file!
+		
 		self.load_widget(browser, manifest.origin, path+manifest.source)
 	
 		return manifest, module, window, browser
