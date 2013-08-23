@@ -1,5 +1,4 @@
 ![Droplets - Linux html/css/javascript GUI frontend framework for widgets and apps written in Python for GTK+ with webkit webview](droplets_logo.png)
-droplets
 ========
 
 Linux html/css/javascript GUI frontend framework for widgets and apps written in Python for GTK+ with webkit webview
