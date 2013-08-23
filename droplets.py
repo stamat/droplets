@@ -18,9 +18,6 @@ import re
 from droplets.droplet import Droplet
 			
 def main(args):
-
-#TODO: THIS SHOULD BE WIDGET/APP MANAGING SYSTEM! See to it...
-
 #	global path
 #	if path[len(path)-1] != '/':
 #		path = path + '/'
@@ -31,10 +28,14 @@ def main(args):
 	except IndexError:
 		pass
 	
-	path = sys.argv[1]
-		
 	
-	#TODO: move to droplet.py
+	path = sys.argv[1]
+
+
+
+	mainDrop = Droplet(path, mfest)
+		
+		
 	def toggleMove(*args):
 		label = args[0].get_label()
 		parsed = re.match('(?P<pref>.*:\s*)(?P<state>.*)$', label)

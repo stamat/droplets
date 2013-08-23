@@ -12,6 +12,7 @@ import urllib
 import os
 import imp
 import re
+from subprocess import call
 from manifest import Manifest
 
 if gtk.pygtk_version < (2,9,0):
@@ -26,6 +27,7 @@ class Droplet:
 	path = None
 	temp = {'x':0, 'y':0}
 	drag_handler_id = None
+	root_dir = None
 	
 	
 	##
@@ -209,17 +211,30 @@ class Droplet:
 		if manifest.drag:
 			self.droplet_drag_enable(browser, manifest)
 		
-		
-		
 		#TODO: Widgets can be either completely local or completely remote in a sense of resources. A web widget cannot have a communication with the system, a local widget cannot have a communication to the web through HTTP, only through python interface, thus disabling a chance that it can accidentaly load malicius scripts that can be changed by the third party
 		# Web widgets have alerts and popups blocked completely.
 		# In every local python script there will be enabled a function for curl requests and responses and a way to store data
-		def banRemoteNavig (web_view, frame, request, navigation_action, policy_decision):
-			if not request.get_uri().startswith('file://'):
+		def redirectNavig (web_view, frame, request, navigation_action, policy_decision):
+			
+			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
+			uri = request.get_uri()
+			
+			if not uri.startswith('file://'):
 				policy_decision.ignore()
 				return True
+			
+			if reason == 'OTHER' and self.root_dir == None:
+				self.root_dir = '/'.join(uri.split('/')[:-1])
+				policy_decision.use()
+				return True
+			
+			#XXX: CAN BE USED TO OPEN WEB PAGES! :O Allow only on local!!!
+			if not uri.startswith(self.root_dir):
+				policy_decision.ignore()
+				call(["xdg-open", uri])
+				return True
 		
-		if manifest.origin == 'local': browser.connect('navigation-policy-decision-requested', banRemoteNavig)
+		if manifest.origin =='local': browser.connect('navigation-policy-decision-requested', redirectNavig)
 		
 		def banRemoteRequests (web_view, frame, web_resource, request, response):
 			if not request.get_uri().startswith('file://'):
