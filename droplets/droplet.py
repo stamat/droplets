@@ -12,6 +12,7 @@ import urllib
 import os
 import imp
 import re
+import math
 from subprocess import call
 from manifest import Manifest
 
@@ -20,6 +21,7 @@ if gtk.pygtk_version < (2,9,0):
     raise SystemExit
 
 class Droplet:
+
 	window = None
 	browser = None
 	manifest = None
@@ -27,8 +29,100 @@ class Droplet:
 	path = None
 	temp = {'x':0, 'y':0}
 	drag_handler_id = None
-	root_dir = None
+	root_url = None
 	
+	##
+	# Imports module by given uri using imp module used to implement import
+	#
+	# @param 	uri 	Uri of the module
+	# @param	absl	Is uri absolute
+	# @return	module	Python module
+	def importFromURI(self, uri, absl=False):
+		if not absl:
+			uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
+		path, fname = os.path.split(uri)
+		mname, ext = os.path.splitext(fname)
+		
+	 	no_ext = os.path.join(path,mname)
+	 	
+		if os.path.exists(no_ext + '.pyc'):
+			try:
+				return imp.load_compiled(mname, no_ext + '.pyc')
+			except:
+				pass
+		if os.path.exists(no_ext + '.py'):
+			try:
+				return imp.load_source(mname, no_ext + '.py')
+			except:
+				pass
+	
+	# A simple demonstration of using cairo to shape windows.
+	# Natan 'whatah' Zohar
+	
+	# Shape the window into a rounded rectangle
+	def reshaperect(self, obj, allocation, radius=0):
+		w,h = allocation.width, allocation.height
+		bitmap = gtk.gdk.Pixmap(None, w, h, 1)
+
+		# Clear the bitmap
+		fg = gtk.gdk.Color(pixel=0)
+		bg = gtk.gdk.Color(pixel=-1)
+		fg_gc = bitmap.new_gc(foreground=fg, background=bg)
+		bitmap.draw_rectangle(fg_gc, True, 0, 0, w, h)
+
+		# Draw our shape into the pixmap using cairo
+		# Let's try drawing a rectangle with rounded edges.
+		padding = 0 # Padding from the edges of the window
+		rounded = radius # How round to make the edges
+		cr = bitmap.cairo_create()
+		cr.set_source_rgb(0,0,0)
+		# Move to top corner
+		cr.move_to(0+padding+rounded, 0+padding)
+
+		# Top right corner and round the edge
+		cr.line_to(w-padding-rounded, 0+padding)
+		cr.arc(w-padding-rounded, 0+padding+rounded, rounded, math.pi/2, 0)
+
+		# Bottom right corner and round the edge
+		cr.line_to(w-padding, h-padding-rounded)
+		cr.arc(w-padding-rounded, h-padding-rounded, rounded, 0, math.pi/2)
+
+		# Bottom left corner and round the edge.
+		cr.line_to(0+padding+rounded, h-padding)
+		cr.arc(0+padding+rounded, h-padding-rounded, rounded, math.pi+math.pi/2, math.pi)
+
+		# Top left corner and round the edge
+		cr.line_to(0+padding, 0+padding+rounded)
+		cr.arc(0+padding+rounded, 0+padding+rounded, rounded, math.pi/2, 0)
+
+		# Fill in the shape.
+		cr.fill()
+
+		# Set the window shape
+		obj.shape_combine_mask(bitmap, 0, 0)
+		obj.show()
+
+
+    # Reshape the window into a circle
+	def reshapecircle(self, obj, allocation):
+		w,h = allocation.width, allocation.height
+		bitmap = gtk.gdk.Pixmap(None, w, h, 1)
+
+		# Clear the bitmap 
+		fg = gtk.gdk.Color(pixel=0)
+		bg = gtk.gdk.Color(pixel=-1)
+		fg_gc = bitmap.new_gc(foreground=fg, background=bg)
+		bitmap.draw_rectangle(fg_gc, True, 0, 0, w, h)
+
+		# Draw our shape into the bitmap using cairo      
+		cr = bitmap.cairo_create()
+		cr.set_source_rgb(0,0,0)
+		cr.arc(w/2,h/2,min(h,w)/2,0,2*math.pi)
+		cr.fill()
+
+		# Set the window shape
+		obj.shape_combine_mask(bitmap, 0, 0)
+		obj.show()
 	
 	##
 	# Function that makes a gtk.Widget transparent through
@@ -36,7 +130,7 @@ class Droplet:
 	#
 	# @param 	widget	gtk.Widget object
 	# @return 	bool	success
-	def make_transparent (self, widget):
+	def transparent_window (self, widget):
 		screen = widget.get_screen()
 		colormap = screen.get_rgba_colormap()
 		if colormap != None:
@@ -55,16 +149,19 @@ class Droplet:
 		cr.fill()
 		
 		return False
-	
-
-
+	##
+	# LOL!
+	def dict_key_exists(self, dict, key):
+		return key in dict
+		
+		
 	##
 	# On main droplet window 'configure-event', store current 
 	# X, Y coordinates. Binded in {@link #prepare prepare method}
 	# 
 	# @param	w	gtk.Window object
 	# @param	e	gtk.gdk.Event object
-	def on_configure(self,w, e):
+	def on_configure(self, w, e):
 		self.temp['x'], self.temp['y'] = w.get_position()
 
 
@@ -114,6 +211,41 @@ class Droplet:
 			if fn:
 				result = fn(**packet['args'])
 				self.send(result)
+				
+	##
+	# Convers a gtk events and DND gtk events to JSON to enable the connection from JavaScript
+	def event_to_json(self, w, *args):
+		dict = {}
+		#on gtk event
+		if(isinstance(args[0], gtk.gdk.Event)):
+			dict = self.attrs_to_dict(args[0])
+			dict['type'] = args[0].type.value_name
+		elif(isinstance(args[0], gtk.gdk.DragContext)): #on drag context, what is the point of this lol... but let it stay, i was tired and stupid
+			print args[0].drag_get_selection()
+			dict = {
+				'targets': args[0].targets,
+				'uris': args[3].get_uris(),
+				'x': args[1],
+				'y': args[2],
+				'text': args[3].get_text()
+			}
+		self.browser.execute_script(args[len(args)-1]+"""('"""+str(json.dumps(dict))+"""');""")
+	
+	
+	def attrs_to_dict(self, obj):
+		attribs = dir(obj)
+		result = {}
+		for v in attribs:
+			attr = getattr(obj,v)
+			t = type(attr)
+			if t is str or t is int or t is bool or t is float:
+				result[v] = attr
+	
+		return result
+	
+	
+	def send(self, msg):
+		self.browser.execute_script('droplets.recieve("'+str(msg)+'");')
 	
 	#TODO: MINIMIZE, MAXIMIZE, Reload, get position, get size, Open Settings... and such
 	def droplet_connect(self, object, event, callback):
@@ -146,75 +278,80 @@ class Droplet:
 		self.on_focus_out()
 		gtk.main_quit()
 		raise SystemExit	
-
-	def dict_key_exists(self, dict, key):
-		return key in dict
 	
-	def send(self, msg):
-		self.browser.execute_script('droplets.recieve("'+str(msg)+'");')
+	def set_to_transparent(self):
+		self.transparent_window(self.window)
+		self.browser.set_transparent(True) #set the webview transparency (no background on body)
+		self.browser.connect('expose-event', self.transparent_expose)
 	
+	##
+	# Window prepare and embed webview
 	def prepare_widget(self, manifest, module):
+		
 		window = gtk.Window()
-	
-		window.set_app_paintable(True)
-	
+		self.window = window
+		browser = webkit.WebView()
+		self.browser = browser
+		self.manifest = manifest
+		self.module = module
+		
+		
+		window.set_resizable(manifest.resizable)
 		window.set_keep_below(manifest.below)
 		window.set_keep_above(manifest.above)
 		window.set_skip_taskbar_hint(manifest.skip_taskbar)
 		window.set_skip_pager_hint(manifest.skip_pager)
-		window.set_decorated(manifest.decorated)
-
-		#window.connect('expose-event', self.transparent_expose)		
+		window.set_decorated(manifest.decorated)		
 
 		if manifest.transparent:
-			self.make_transparent(window)
+			self.set_to_transparent()
 
-		
-		window.set_title(manifest.title)
+		if manifest.title != None:
+			window.set_title(manifest.title)
 
 		if manifest.stick:
 			window.stick()
 		
 		if manifest.icon != None:
-			window.set_icon_from_file (path+manifest['icon'])
+			window.set_icon_from_file (path + manifest.icon)
+		
+		if manifest.drag:
+			self.droplet_drag_enable(browser, manifest)
 		
 		window.connect('configure-event', self.on_configure)
 		window.connect('focus-out-event', self.on_focus_out)
 		#TODO: on destroy
 		window.connect('destroy', self.droplet_deactivate)
 		
-		browser = webkit.WebView()
-		browser.set_transparent(manifest.transparent)
 		
-		settings = browser.get_settings()
+		#set browsers settings
+		browser_settings = browser.get_settings()
 		
 		#XXX: Should it be always false?
-		settings.set_property('enable-default-context-menu', manifest.default_context_menu)
-		settings.set_property('enable-webaudio', 1)
-		settings.set_property('enable-webgl', 1)
-		settings.set_property('default-encoding', 'utf8')
-		settings.set_property('enable-accelerated-compositing', 1)
-		if manifest.origin == 'local':	
-			settings.set_property('enable-universal-access-from-file-uris', 1)
-		settings.set_property('enable-plugins', 0)
-		settings.set_property('enable-page-cache', 1)
-
-		#print browser.can_go_back_or_forward()
-
-		if manifest.origin == 'local': browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
-		browser.connect('expose-event', self.transparent_expose)
-
-		if module != None and manifest.origin == 'local':
-			def on_title_change_wrapper(w, e, title): self.recieve(title)
-			browser.connect('title-changed', on_title_change_wrapper)
+		browser_settings.set_property('enable-default-context-menu', manifest.default_context_menu)
+		browser_settings.set_property('enable-webaudio', 1)
+		browser_settings.set_property('enable-webgl', 1)
+		browser_settings.set_property('default-encoding', 'utf8')
+		browser_settings.set_property('enable-accelerated-compositing', 1)
 		
-		if manifest.drag:
-			self.droplet_drag_enable(browser, manifest)
+		if manifest.origin == 'local':	
+			browser_settings.set_property('enable-universal-access-from-file-uris', 1)
+		browser_settings.set_property('enable-plugins', 0)
+		browser_settings.set_property('enable-page-cache', 1)
+		
+
+		if manifest.origin == 'local': 
+			browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
+			
+			#Enable communication over title changed
+			if module != None:
+				def on_title_change_wrapper(w, e, title): self.recieve(title)
+				browser.connect('title-changed', on_title_change_wrapper)
 		
 		#TODO: Widgets can be either completely local or completely remote in a sense of resources. A web widget cannot have a communication with the system, a local widget cannot have a communication to the web through HTTP, only through python interface, thus disabling a chance that it can accidentaly load malicius scripts that can be changed by the third party
 		# Web widgets have alerts and popups blocked completely.
 		# In every local python script there will be enabled a function for curl requests and responses and a way to store data
-		def redirectNavig (web_view, frame, request, navigation_action, policy_decision):
+		def redirectNavigLocal (web_view, frame, request, navigation_action, policy_decision):
 			
 			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
 			uri = request.get_uri()
@@ -223,18 +360,33 @@ class Droplet:
 				policy_decision.ignore()
 				return True
 			
-			if reason == 'OTHER' and self.root_dir == None:
-				self.root_dir = '/'.join(uri.split('/')[:-1])
+			if reason == 'OTHER' and self.root_url == None:
+				self.root_url = '/'.join(uri.split('/')[:-1])
 				policy_decision.use()
 				return True
 			
-			#XXX: CAN BE USED TO OPEN WEB PAGES! :O Allow only on local!!!
-			if not uri.startswith(self.root_dir):
+			if not uri.startswith(self.root_url):
 				policy_decision.ignore()
 				call(["xdg-open", uri])
 				return True
 		
-		if manifest.origin =='local': browser.connect('navigation-policy-decision-requested', redirectNavig)
+		if manifest.origin =='local': browser.connect('navigation-policy-decision-requested', redirectNavigLocal)
+		
+		def redirectNavigRemote (web_view, frame, request, navigation_action, policy_decision):
+			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
+			uri = request.get_uri()
+			print uri
+			if reason == 'OTHER' and self.root_url == None:
+				self.root_url = '/'.join(uri.split('/')[:-1])
+				policy_decision.use()
+				return True
+			
+			if not uri.startswith(self.root_url):
+				policy_decision.ignore()
+				return True
+				
+		
+		if manifest.origin =='remote' or manifest.origin == 'hosted': browser.connect('navigation-policy-decision-requested', redirectNavigRemote)
 		
 		def banRemoteRequests (web_view, frame, web_resource, request, response):
 			if not request.get_uri().startswith('file://'):
@@ -242,6 +394,7 @@ class Droplet:
 				
 		if manifest.origin == 'local': browser.connect('resource-request-starting', banRemoteRequests)
 		
+		#Ban other mime type to be loaded into the webview, only text/html is allowed
 		def banOtherMime (web_view, frame, request, mimetype, policy_decision):
 			if mimetype != 'text/html':
 				policy_decision.ignore()
@@ -249,52 +402,42 @@ class Droplet:
 			
 		browser.connect('mime-type-policy-decision-requested', banOtherMime)
 		
+		props = browser.get_window_features()
+		print props.get_property('scrollbar-visible')
 		
-
-		window.add(browser)
-			
+		#add a browser to window
+		child = browser
+		if manifest.type == 'app':
+			child = gtk.ScrolledWindow()
+			child.add(browser)
+		
+		window.add(child)
+		
+		#set viewport size	
 		window.resize(manifest.width, manifest.height)
-			
+		
+		
+		#set window shape if defined
+		if manifest.shape == 'roundedrect':
+			window.connect('size-allocate', self.reshaperect, manifest.corner_radius)
+		if manifest.shape == 'circle':
+			window.connect('size-allocate', self.reshapecircle)
+		
 		if not manifest.hidden:
 			window.show_all()
-			
+		
 		if manifest.x != None and manifest.y != None:
 			window.move(manifest.x , manifest.y)
-			
+		
+		#set window opacity on webview load
 		def on_load_wrapper(w,e): window.set_opacity(manifest.opacity)
 		browser.connect('load-finished', on_load_wrapper)
-	
-		return window, browser
-	
-	#### TODO: NOT SURE IF SAFE!?
-	def event_to_json(self, w, *args):
-		dict = {}
-		#on gtk event
-		if(isinstance(args[0], gtk.gdk.Event)):
-			dict = self.attrs_to_dict(args[0])
-			dict['type'] = args[0].type.value_name
-		elif(isinstance(args[0], gtk.gdk.DragContext)): #on drag context
-			print args[0].drag_get_selection()
-			dict = {
-				'targets': args[0].targets,
-				'uris': args[3].get_uris(),
-				'x': args[1],
-				'y': args[2],
-				'text': args[3].get_text()
-			}
-		self.browser.execute_script(args[len(args)-1]+"""('"""+str(json.dumps(dict))+"""');""")
 		
 	
-	def attrs_to_dict(self, obj):
-		attribs = dir(obj)
-		result = {}
-		for v in attribs:
-			attr = getattr(obj,v)
-			t = type(attr)
-			if t is str or t is int or t is bool or t is float:
-				result[v] = attr
+		return window, browser
+		
 	
-		return result
+	
 	
 	def load_widget(self, browser, origin, source):
 		if origin != 'hosted':
@@ -302,24 +445,6 @@ class Droplet:
 			source = 'file://' + urllib.pathname2url(file)
 		browser.load_uri(source)
 	
-	def importFromURI(self, uri, absl=False):
-		if not absl:
-			uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
-		path, fname = os.path.split(uri)
-		mname, ext = os.path.splitext(fname)
-		
-	 	no_ext = os.path.join(path,mname)
-	 	
-		if os.path.exists(no_ext + '.pyc'):
-			try:
-				return imp.load_compiled(mname, no_ext + '.pyc')
-			except:
-				pass
-		if os.path.exists(no_ext + '.py'):
-			try:
-				return imp.load_source(mname, no_ext + '.py')
-			except:
-				pass
 			
 	def init_widget(self, path, custom_manifest = None):
 		manifest_file = 'manifest.json' #XXX: lol
@@ -342,6 +467,9 @@ class Droplet:
 		self.load_widget(browser, manifest.origin, path+manifest.source)
 	
 		return manifest, module, window, browser
+	
 		
 	def __init__(self, path, custom_manifest = None):
-		self.manifest,self.module,self.window,self.browser = self.init_widget(path, custom_manifest)
+		 self.init_widget(path, custom_manifest)
+		 
+		 

@@ -1,4 +1,7 @@
 import os,json
+from jsonschema import validate 
+
+#TODO JSON VALIDATE
 
 class Manifest:
 	dict = None

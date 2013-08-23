@@ -1,0 +1,19 @@
+{
+	"type": "object",
+	"properties": {
+		"title": {
+			"type": "string"
+		},
+		"type": {
+			"type": "string",
+			"enum": ["widget", "app"],
+			"default": "widget"
+		},
+		
+		"origin": {
+			"type": "string",
+			"enum": ["local", "remote", "hosted"],
+			"default": "local"
+		}
+	}
+}

@@ -6,11 +6,13 @@
     "handle_enabled": false, 
     "height": 248, 
     "width": 200, 
+    "shape": "roundedrect", 
     "below": true, 
-    "stick": true, 
-    "y": 295, 
-    "x": 1090, 
-    "decorated": false, 
+    "corner_radius": 5, 
+    "y": 264, 
+    "x": 1137, 
     "skip_taskbar": true, 
-    "transparent": true
+    "decorated": false, 
+    "transparent": true, 
+    "stick": true
 }

@@ -1,0 +1,19 @@
+{
+    "origin": "hosted", 
+    "skip_taskbar": false, 
+    "default_context_menu": true, 
+    "resizable": true, 
+    "title": "app-test", 
+    "skip_pager": false, 
+    "height": 500, 
+    "source": "", 
+    "width": 600, 
+    "stick": false, 
+    "above": false, 
+    "y": 42, 
+    "x": 216, 
+    "decorated": true, 
+    "type": "app", 
+    "hidden": false, 
+    "transparent": false
+}
