@@ -18,6 +18,9 @@ import re
 from droplets.droplet import Droplet
 			
 def main(args):
+
+#TODO: THIS SHOULD BE WIDGET/APP MANAGING SYSTEM! See to it...
+
 #	global path
 #	if path[len(path)-1] != '/':
 #		path = path + '/'
@@ -28,79 +31,10 @@ def main(args):
 	except IndexError:
 		pass
 	
-	
-	#global path
 	path = sys.argv[1]
-	#global manifest, module, window, browser
-	#manifest, module, window, browser = init_widget(path)
+		
 	
-	#TODO: instance another widget to move the present one	
-	
-	flag = True
-	
-	def show_handle():
-		print 'lol'
-		handle.window.show_all()
-		x,y = mainDrop.window.get_position()
-		#print x, y, handle.manifest.height
-		handle.droplet_move(x, y-handle.manifest.height+1)
-		
-	def hide_handle():
-		print 'omg'
-		print flag
-		if flag:
-			handle.window.hide_all()
-			
-	def enter_handle():
-		print 'zomg'
-		flag = False
-		
-	def leave_handle():
-		print 'zlol'
-		flag = True
-		hide_handle()
-		
-	def set_timeout(func, sec):		
-		t = None
-		def func_wrapper():
-			func()	
-			t.cancel()
-		t = threading.Timer(sec, func_wrapper)
-		t.start()
-		
-	def set_interval(func, sec):
-		def func_wrapper():
-			set_interval(func, sec)	
-			func()	
-		t = threading.Timer(sec, func_wrapper)
-		t.start()
-		return t
-		
-	mainDrop = Droplet(path, mfest)
-	if mainDrop.manifest.handle_enabled:
-		def show_handle_wrapper(w, e): show_handle()
-		mainDrop.window.connect('enter-notify-event', show_handle_wrapper)
-
-		def hide_handle_wrapper(w, e): set_timeout(hide_handle, 0.5)
-		mainDrop.window.connect('leave-notify-event', hide_handle_wrapper)
-	
-		handle = Droplet('system/handle')
-		def enter_handle_wrapper(w, e): enter_handle()
-		handle.window.connect('enter-notify-event', enter_handle_wrapper)
-		def leave_handle_wrapper(w, e): leave_handle()
-		handle.window.connect('leave-notify-event', leave_handle_wrapper)
-		
-		def handle_press_wrapper(w, e): 
-			if e.button == 1:
-				handle.droplet_drag(e.button, int(e.x_root), int(e.y_root), e.time)
-				def follow(w, e):
-					mainDrop.window.move(e.x, e.y+handle.manifest.height-1)
-				handle.window.connect('configure-event', follow)
-				
-		handle.browser.connect('button-press-event', handle_press_wrapper)
-		# handle.window.disconnect('configure-event')
-		
-		
+	#TODO: move to droplet.py
 	def toggleMove(*args):
 		label = args[0].get_label()
 		parsed = re.match('(?P<pref>.*:\s*)(?P<state>.*)$', label)

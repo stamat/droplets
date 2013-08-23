@@ -1,7 +1,11 @@
 import os,sys
 # This needs pygtk 2.9 installed.
 #sys.path[:0] = ['/usr/local/lib/python2.4/site-packages/gtk-2.0']
-import gtk,gobject,pygtk,webkit,cairo
+import gtk
+import gobject
+import pygtk
+import webkit
+import cairo
 pygtk.require('2.0')
 import json
 import urllib
