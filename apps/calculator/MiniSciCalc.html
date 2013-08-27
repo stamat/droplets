@@ -1,0 +1,77 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <style type="text/css" title="AppleStyle">
+        @import "MiniSciCalc.css";
+    </style>
+    <script type="text/javascript" src="localizedStrings.js" charset="utf-8"></script>
+    <script type="text/javascript" src="Parts/utilities.js" charset="utf-8"></script>
+    <script type="text/javascript" src="Parts/setup.js" charset="utf-8"></script>
+    <script type="text/javascript" src="Parts/Text.js" charset="utf-8"></script>
+    <script type="text/javascript" src="MiniSciCalc.js" charset="utf-8"></script>
+    <script type="text/javascript" src="file:///System/Library/WidgetResources/AppleClasses/AppleAnimator.js" charset="utf-8"></script>
+    <script type="text/javascript" src="file:///System/Library/WidgetResources/AppleClasses/AppleInfoButton.js" charset="utf-8"></script>
+    <script type="text/javascript" src="Parts/InfoButton.js" charset="utf-8"></script>
+    <script type="text/javascript" src="file:///System/Library/WidgetResources/AppleClasses/AppleButton.js" charset="utf-8"></script>
+    <script type="text/javascript" src="Parts/GlassButton.js" charset="utf-8"></script>
+</head>
+<body onload="load();" oncut="aW(event)" oncopy="aX(event)" onpaste="aY(event)">
+    <div id="front">
+        <img id="frontImg" src="Images/front.png" alt="" apple-locked="true" apple-part="com.apple.Dashcode.part.frontimage" apple-style="image-theme: 2; image-shape: 3; image-opacity: 1.00; image-top-color: 0.423913062,0.423913062,0.423913062,1; image-bottom-color: 0.144800007,0.144800007,0.144800007,1; image-radius: 10,10,10,10; image-border: 0; image-border-color: 1,1,1,0.5; image-border-width: 1; shine-on: 0; shine-strength: 0.35; shine-alpha-level: 0.00; shine-height: 0.91; glass-arc-height: 0.00; embossed-on: 0; embossed-depth: 3.9; embossed-shadow: 0.68; embossed-highlight: 0.3; image-include-custom: 1; image-custom-image-path: calcbg_blurred.png; image-custom-center: 1; image-custom-resize: 2; shadow-include-shadow: 1; shadow-offset: -1.00,-6.00; shadow-color: 0,0,0,0.3333;">
+        <img src="Images/neg.png" id="b_neg" class="button1" title="Negate" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/dec.png" id="b_dec" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/0.png" id="b_0" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/1.png" id="b_1" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/2.png" id="b_2" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/3.png" id="b_3" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/4.png" id="b_4" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/5.png" id="b_5" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/6.png" id="b_6" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/7.png" id="b_7" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/8.png" id="b_8" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/9.png" id="b_9" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/eq.png" id="b_eq" class="button2" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/plus.png" id="b_plus" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/minus.png" id="b_minus" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/mult.png" id="b_mult" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/div.png" id="b_div" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/cp.png" id="b_cp" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)" class="button1">
+        <img src="Images/op.png" id="b_op" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)" class="button1">
+        <img src="Images/clr.png" id="b_clr" title="Clear display" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)" class="button1">
+        <img src="Images/ans.png" id="b_ans" title="Recall result of most recent calculation" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)" class="button1">
+        <img src="Images/m_x.png" id="b_m_x" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)" class="button1">
+        <img src="Images/sto.png" id="b_sto" class="button1" title="Store value in any of seven memory locations A, B, C, N, T, X, and Y" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/2nd.png" id="b_2nd" class="button1" title="Alternate functions" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/del.png" id="b_del" class="button1" title="Delete entity highlighted by cursor" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/log.png" id="b_log" class="button1" title="Logarithm to base 10" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/tan.png" id="b_tan" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/pi.png" id="b_pi" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/fact.png" id="b_fact" class="button1" title="Factorial" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/ee.png" id="b_ee" class="button1" title="E/scientific notation" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/sin.png" id="b_sin" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/cos.png" id="b_cos" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/sqr.png" id="b_sqr" class="button1" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/exp.png" id="b_exp" class="button1" title="Raise to power" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/rpl.png" id="b_rpl" class="button1" title="Toggle input mode to &quot;replace&quot; (replace input at cursor)" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/rad.png" id="b_rad" class="button1" title="Toggle unit of angular measurement to radian" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/mem.png" id="b_mem" class="button1" title="Toggle extra memory locations" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/up.png" id="b_up" class="button1" title="Previous calculation" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/down.png" id="b_down" class="button1" title="Next calculation" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/left.png" id="b_left" class="button1" title="Move cursor to left" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <img src="Images/right.png" id="b_right" class="button1" title="Move cursor to right" onmousedown="bj(event)" onmouseout="bk(event)" onmouseup="bk(event)">
+        <div apple-part="com.apple.Dashcode.part.text" class="apple-text apple-no-children display_class" apple-default-image-visibility="hidden" apple-text-overflow="ellipsis" id="display"></div>
+        <div apple-part="com.apple.Dashcode.part.text" class="apple-text apple-no-children display_class" apple-default-image-visibility="hidden" apple-text-overflow="ellipsis" id="display_support"></div>
+        <img src="Images/display_backlight.png" id="display_backlight" apple-default-image-visibility="hidden">
+        <div apple-part="com.apple.Dashcode.part.infobutton" class="info apple-no-children" apple-default-image-visibility="hidden" id="infobutton"></div>
+    </div>
+    <div id="back">
+        <img src="Images/back.png" alt="" apple-part="com.apple.Dashcode.part.backimage" apple-style=" image-radius: 10,10,10,10; image-border-color: 0.670000017,0.670000017,0.670000017,1; shadow-include-shadow: 1; shadow-offset: -1.00,-6.00; shadow-color: 0,0,0,0.3333;" id="backImg">
+        <div id="done" class="apple-no-children" apple-part="com.apple.Dashcode.part.glassbutton"></div>
+        <img src="Images/rocketlogo.png" id="logo">
+        <div apple-part="com.apple.Dashcode.part.text" class="apple-text apple-no-children" apple-default-image-visibility="hidden" apple-text-overflow="ellipsis" id="sitelink" onclick="aZ(event)"></div>
+        <div apple-part="com.apple.Dashcode.part.text" class="apple-text apple-no-children" apple-default-image-visibility="hidden" apple-text-overflow="ellipsis" id="buylink" onclick="ba(event)"></div>
+        <div apple-part="com.apple.Dashcode.part.text" class="apple-text apple-no-children" apple-default-image-visibility="hidden" apple-text-overflow="ellipsis" id="emailus" onclick="bb(event)"></div>
+    </div>
+</body>
+</html>

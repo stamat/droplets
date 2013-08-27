@@ -1,0 +1,14 @@
+{
+	"origin": "remote",
+    "title": "weather", 
+    "skip_pager": false, 
+    "height": 20, 
+    "decorated": false, 
+    "width": 100, 
+    "stick": true, 
+    "above": true, 
+    "y": 34, 
+    "x": 1148, 
+    "skip_taskbar": true, 
+    "transparent": true
+}

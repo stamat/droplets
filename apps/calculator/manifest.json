@@ -1,0 +1,17 @@
+{
+    "origin": "local", 
+    "title": "calculator", 
+    "skip_pager": false, 
+    "height": 150, 
+    "source": "MiniSciCalc.html", 
+    "below": true, 
+    "width": 150, 
+    "stick": false, 
+    "y": 501, 
+    "x": 1075, 
+    "decorated": false, 
+    "type": "widget", 
+    "skip_taskbar": false, 
+    "transparent": true, 
+    "icon": "Icon.png"
+}

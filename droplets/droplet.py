@@ -56,20 +56,25 @@ class Droplet:
 			except:
 				pass
 	
-	# A simple demonstration of using cairo to shape windows.
-	# Natan 'whatah' Zohar
-	
-	# Shape the window into a rounded rectangle
-	def reshaperect(self, obj, allocation, radius=0):
-		w,h = allocation.width, allocation.height
+	# prepares bitmap so cairo can draw on it
+	def prepareBitmap(self, w, h):
 		bitmap = gtk.gdk.Pixmap(None, w, h, 1)
-
+		
 		# Clear the bitmap
 		fg = gtk.gdk.Color(pixel=0)
 		bg = gtk.gdk.Color(pixel=-1)
 		fg_gc = bitmap.new_gc(foreground=fg, background=bg)
 		bitmap.draw_rectangle(fg_gc, True, 0, 0, w, h)
-
+		
+		return bitmap
+	
+	# A simple demonstration of using cairo to shape windows.
+	# Natan 'whatah' Zohar
+	
+	# Shape the window into a rounded rectangle
+	def reshaperect(self, obj, allocation, radius=0):
+		bitmap = self.prepareBitmap(allocation.width, allocation.height)
+		
 		# Draw our shape into the pixmap using cairo
 		# Let's try drawing a rectangle with rounded edges.
 		padding = 0 # Padding from the edges of the window
@@ -105,15 +110,8 @@ class Droplet:
 
     # Reshape the window into a circle
 	def reshapecircle(self, obj, allocation):
-		w,h = allocation.width, allocation.height
-		bitmap = gtk.gdk.Pixmap(None, w, h, 1)
-
-		# Clear the bitmap 
-		fg = gtk.gdk.Color(pixel=0)
-		bg = gtk.gdk.Color(pixel=-1)
-		fg_gc = bitmap.new_gc(foreground=fg, background=bg)
-		bitmap.draw_rectangle(fg_gc, True, 0, 0, w, h)
-
+		bitmap = self.prepareBitmap(allocation.width, allocation.height)
+		
 		# Draw our shape into the bitmap using cairo      
 		cr = bitmap.cairo_create()
 		cr.set_source_rgb(0,0,0)
@@ -124,6 +122,16 @@ class Droplet:
 		obj.shape_combine_mask(bitmap, 0, 0)
 		obj.show()
 	
+	#TODO:
+	def reshapemask(self, obj, allocation, mask):
+		bitmap = self.prepareBitmap(allocation.width, allocation.height)
+		
+		bitmap.draw_pixbuf(None, gtk.gdk.pixbuf_new_from_file(mask), 0, 0, 0, 0)
+		
+		obj.shape_combine_mask(bitmap, 0, 0)
+		obj.show()
+		
+		
 	##
 	# Function that makes a gtk.Widget transparent through
 	# gtk.Widget.set_colormap. Used in {@link #prepare prepare method}
@@ -259,13 +267,13 @@ class Droplet:
 		if e.button == 1:
 			self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
 	
-	def droplet_drag_enable(self, browser=None, manifest=None):
+	def droplet_move_enable(self, browser=None, manifest=None):
 		if browser is None: browser = self.browser
 		if manifest is None: manifest = self.manifest
 		self.drag_handler_id = browser.connect('button-press-event', self.drag_event_wrapper)
 		manifest.drag = True
 	
-	def droplet_drag_disable(self, browser=None, manifest=None):
+	def droplet_move_disable(self, browser=None, manifest=None):
 		if browser is None: browser = self.browser
 		if manifest is None: manifest = self.manifest
 		browser.disconnect(self.drag_handler_id)
@@ -284,9 +292,76 @@ class Droplet:
 		self.browser.set_transparent(True) #set the webview transparency (no background on body)
 		self.browser.connect('expose-event', self.transparent_expose)
 	
+	def toggleProperty(self, w, e):
+		label = w.get_label()
+		parsed = re.match('^(?P<pref>.*:\s*)(?P<state>.*)$', label)
+		state = parsed.group('state').lower()
+		pref = parsed.group('pref')
+		action = re.match('^\s*(?P<action>[a-zA-Z]*)\s*:\s*$', pref).group('action').lower()
+
+		if state == 'off':
+			fn = getattr(self, 'droplet_'+action+'_disable')
+			w.set_label(pref+'On')
+		elif state == 'on':
+			fn = getattr(self, 'droplet_'+action+'_enable')
+			w.set_label(pref+'Off')
+		fn()
+	
+	def widgetContextMenu(self):
+		#TODO: ONLY ON WIDGETS!!! toggle bool in manifest
+		menu = gtk.Menu()
+		properties_menu = gtk.Menu()
+		remove_menu = gtk.Menu()
+		
+		def detachFn(*args):
+			print args
+		menu.attach_to_widget(self.browser, detachFn) ##TODO: see what a fuckin' detach function is
+	
+		move = gtk.MenuItem("Move: Off")
+		stick = gtk.MenuItem("Stick: Off")
+		bottom = gtk.MenuItem("Bottom: Off")
+		above = gtk.MenuItem("Above: Off")
+		properties = gtk.MenuItem("Properties")
+		properties.set_submenu(properties_menu)
+		settings = gtk.MenuItem("Settings")
+	
+		remove_submenu = gtk.MenuItem("Deactivate")
+		remove_submenu.set_submenu(remove_menu)
+		remove = gtk.MenuItem("X")
+		remove_menu.append(remove);
+	
+		properties_menu.append(move)
+		properties_menu.append(stick)
+		properties_menu.append(bottom)
+		properties_menu.append(above)
+		menu.append(properties)
+		menu.append(settings)
+		menu.append(remove_submenu)
+		move.show()
+		stick.show()
+		bottom.show()
+		above.show()
+		properties.show()
+		properties_menu.show()
+		settings.show()
+		remove.show()
+		remove_submenu.show()
+	
+		move.connect('button-press-event', self.toggleProperty)
+		remove.connect('button-press-event', self.droplet_deactivate)
+	
+		#XXX Watch it... self, widget, event, menu
+		def _on_button_press_event(self, event, menu):
+			if event.button == 3:
+				menu.popup(None, None, None, 0, event.time)
+				pass
+	
+		self.browser.connect('button_press_event',_on_button_press_event, menu)
+	
+	
 	##
 	# Window prepare and embed webview
-	def prepare_widget(self, manifest, module):
+	def prepare_widget(self, manifest, module, path):
 		
 		window = gtk.Window()
 		self.window = window
@@ -316,7 +391,7 @@ class Droplet:
 			window.set_icon_from_file (path + manifest.icon)
 		
 		if manifest.drag:
-			self.droplet_drag_enable(browser, manifest)
+			self.droplet_move_enable(browser, manifest)
 		
 		window.connect('configure-event', self.on_configure)
 		window.connect('focus-out-event', self.on_focus_out)
@@ -347,6 +422,9 @@ class Droplet:
 			if module != None:
 				def on_title_change_wrapper(w, e, title): self.recieve(title)
 				browser.connect('title-changed', on_title_change_wrapper)
+				
+				
+		self.widgetContextMenu()
 		
 		#TODO: Widgets can be either completely local or completely remote in a sense of resources. A web widget cannot have a communication with the system, a local widget cannot have a communication to the web through HTTP, only through python interface, thus disabling a chance that it can accidentaly load malicius scripts that can be changed by the third party
 		# Web widgets have alerts and popups blocked completely.
@@ -375,7 +453,7 @@ class Droplet:
 		def redirectNavigRemote (web_view, frame, request, navigation_action, policy_decision):
 			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
 			uri = request.get_uri()
-			print uri
+			
 			if reason == 'OTHER' and self.root_url == None:
 				self.root_url = '/'.join(uri.split('/')[:-1])
 				policy_decision.use()
@@ -423,6 +501,9 @@ class Droplet:
 		if manifest.shape == 'circle':
 			window.connect('size-allocate', self.reshapecircle)
 		
+		if manifest.shape == 'mask':
+			window.connect('size-allocate', self.reshapemask, manifest.shape_mask)
+		
 		if not manifest.hidden:
 			window.show_all()
 		
@@ -462,7 +543,7 @@ class Droplet:
 		self.temp['x'] = manifest.x
 		self.temp['y'] = manifest.y
 		module = self.importFromURI(os.path.join(path, manifest.executable), True)
-		window,browser = self.prepare_widget(manifest, module)
+		window,browser = self.prepare_widget(manifest, module, path)
 		
 		self.load_widget(browser, manifest.origin, path+manifest.source)
 	
@@ -471,5 +552,5 @@ class Droplet:
 		
 	def __init__(self, path, custom_manifest = None):
 		 self.init_widget(path, custom_manifest)
-		 
+		 gtk.main()
 		 

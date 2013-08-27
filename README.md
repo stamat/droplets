@@ -1,16 +1,19 @@
 ![Droplets - Linux html/css/javascript GUI frontend framework for widgets and apps written in Python for GTK+ with webkit webview](droplets_logo.png)
 ========
 
-Linux html/css/javascript GUI frontend framework for widgets and apps written in Python for GTK+ with webkit webview
+Linux HTML/CSS/JavaScript GUI frontend framework for widgets and apps written in Python for GTK+ with webkit webview
 
-Why?
-----
-Have you ever wanted bits of the mighty Internet on your desktop? Just to stay informed at a glance. 
+Enables you to unleash your creativity while developing GUI frontends for Linux desktop applications or have fancy customizable easy to develop widgets on your desktop. An online store will be included in near future.
 
-write this
+It's like Google Chrome packaged apps plus widget engine, but without a lot of constraints, and without Google Chrome. 
 
-Face it, every developer that tried Java, got frustrated by SWING... Fuck. Even mentioning it gives me shivers. I dont like Glade either. Nokia had some cool builder with Qt, but it gets hadned from hand to hand, the poor Qt...
-I am used to building web interfaces, because they are so easy to design
+Security model is very simple: 
+* Local apps don’t use the webview to make remote calls (loaded webpage is used only as a GUI interface), they can do everything on the system (even do CURL requests) by the privileges the apps were run on through the Python interface script which functions the JavaScript of the app can call.
+* Remote apps don’t have any access to the system, but they are stored locally and can function as any web app making calls to cross domain allowed services, load remote resources or make JSONP requests.
+* Hosted apps are hosted remotely, they are exactly like web apps opened in browser.
+
+Or if you haven’t heard about Chrome apps, it is like PhoneGap for the Linux desktop combined with Dashboard Widgets, or Windows Gadgets but more secure.
+
 
 Notes
 -----
@@ -43,20 +46,17 @@ Notes
 
 TO DOs:
 -------
+[ ] Window shape mask from the image gtk.gdk.pixbuf_new_from_file(filename) ? then convert Pixbuf to Pixmap. The Pixmap inherits gtk.gdk.Drawable thus something like this might work gtk.gdk.Drawable.draw_pixbuf, and pixpuf has gtk.gdk.pixbuf_new_from_file
 
-[ ] Implement json validator to validate manifest, settings and properties.
+[ ] Implement json validator to validate manifest, and settings.
 
 [ ] Separate settings from manifest - example: x and y are settings, width, height and resize are manifest 
-
-[ ] Move the droplet menu to droplet.py from droplets.py
 
 [ ] Complete the menu and enable it with basic functionality like move toggle, stick toggle, above toggle, disable, settings invoke, reload
 
 [ ] If stick is off, remember the widget screen in settings, gtk.Window.set_screen, gtk.Window.get_screen
 
 [ ] If app is resizable store the values in settings
-
-[ ] Each droplet should be a gtk thread for itself, so move a gtk thread in droplet.py too
 
 [ ] Define a settings file
 

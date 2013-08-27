@@ -1,7 +1,6 @@
 {
-    "title": "droplet-handle", 
+    "title": "", 
     "skip_pager": false, 
-    "handle_enabled": false, 
     "height": 20, 
     "decorated": false, 
     "width": 100, 
@@ -10,6 +9,5 @@
     "y": 34, 
     "x": 1148, 
     "skip_taskbar": true, 
-    "hidden": true, 
     "transparent": true
 }
