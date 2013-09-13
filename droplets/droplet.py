@@ -110,6 +110,7 @@ class Droplet:
 
     # Reshape the window into a circle
 	def reshapecircle(self, obj, allocation):
+		w, h = allocation.width, allocation.height
 		bitmap = self.prepareBitmap(allocation.width, allocation.height)
 		
 		# Draw our shape into the bitmap using cairo      
