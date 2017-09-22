@@ -7,6 +7,8 @@ Enables you to unleash your creativity while developing GUI frontends for Linux 
 
 It's like Google Chrome packaged apps plus widget engine, but without a lot of constraints, and without Google Chrome. 
 
+[SCREENSHOT](https://i.imgur.com/RUpVIui.jpg)
+
 Security model is very simple: 
 * Local apps don’t use the webview to make remote calls (loaded webpage is used only as a GUI interface), they can do everything on the system (even do CURL requests) by the privileges the apps were run on through the Python interface script which functions the JavaScript of the app can call.
 * Remote apps don’t have any access to the system, but they are stored locally and can function as any web app making calls to cross domain allowed services, load remote resources or make JSONP requests.
