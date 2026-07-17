@@ -1,557 +1,447 @@
-import os,sys
-# This needs pygtk 2.9 installed.
-#sys.path[:0] = ['/usr/local/lib/python2.4/site-packages/gtk-2.0']
-import gtk
-import gobject
-import pygtk
-import webkit
-import cairo
-pygtk.require('2.0')
-import json
-import urllib
-import os
-import imp
-import re
-import math
-from subprocess import call
-from manifest import Manifest
+"""Droplet: a single widget/app window backed by a WebKit2 WebView.
 
-if gtk.pygtk_version < (2,9,0):
-    print "PyGtk 2.9.0 or later required"
-    raise SystemExit
+Ported from PyGTK2 + WebKit1 to PyGObject (GTK 3) + WebKit2 / Python 3.
+"""
+
+import importlib.util
+import json
+import math
+import os
+import re
+import urllib.request
+from subprocess import call
+
+import cairo
+import gi
+
+gi.require_version("Gtk", "3.0")
+try:
+    gi.require_version("WebKit2", "4.1")
+except ValueError:  # older distros ship the libsoup2 build
+    gi.require_version("WebKit2", "4.0")
+from gi.repository import Gdk, GdkPixbuf, Gtk, WebKit2  # noqa: E402
+
+from .manifest import Manifest  # noqa: E402
+
+# JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
+# WebKit2 script-message handler instead of the WebKit1 document.title hack.
+_BRIDGE_SHIM = (
+    "window.droplets = window.droplets || {};"
+    "droplets.send = function(cmd) {"
+    "  if (cmd !== undefined && cmd !== null)"
+    "    window.webkit.messageHandlers.droplet.postMessage(String(cmd));"
+    "};"
+)
+
 
 class Droplet:
+    def __init__(self, path, custom_manifest=None):
+        self.window = None
+        self.browser = None
+        self.manifest = None
+        self.module = None
+        self.path = None
+        self.temp = {"x": 0, "y": 0}
+        self.drag_handler_id = None
+        self.root_url = None
 
-	window = None
-	browser = None
-	manifest = None
-	module = None
-	path = None
-	temp = {'x':0, 'y':0}
-	drag_handler_id = None
-	root_url = None
-	
-	##
-	# Imports module by given uri using imp module used to implement import
-	#
-	# @param 	uri 	Uri of the module
-	# @param	absl	Is uri absolute
-	# @return	module	Python module
-	def importFromURI(self, uri, absl=False):
-		if not absl:
-			uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
-		path, fname = os.path.split(uri)
-		mname, ext = os.path.splitext(fname)
-		
-	 	no_ext = os.path.join(path,mname)
-	 	
-		if os.path.exists(no_ext + '.pyc'):
-			try:
-				return imp.load_compiled(mname, no_ext + '.pyc')
-			except:
-				pass
-		if os.path.exists(no_ext + '.py'):
-			try:
-				return imp.load_source(mname, no_ext + '.py')
-			except:
-				pass
-	
-	# prepares bitmap so cairo can draw on it
-	def prepareBitmap(self, w, h):
-		bitmap = gtk.gdk.Pixmap(None, w, h, 1)
-		
-		# Clear the bitmap
-		fg = gtk.gdk.Color(pixel=0)
-		bg = gtk.gdk.Color(pixel=-1)
-		fg_gc = bitmap.new_gc(foreground=fg, background=bg)
-		bitmap.draw_rectangle(fg_gc, True, 0, 0, w, h)
-		
-		return bitmap
-	
-	# A simple demonstration of using cairo to shape windows.
-	# Natan 'whatah' Zohar
-	
-	# Shape the window into a rounded rectangle
-	def reshaperect(self, obj, allocation, radius=0):
-		bitmap = self.prepareBitmap(allocation.width, allocation.height)
-		
-		# Draw our shape into the pixmap using cairo
-		# Let's try drawing a rectangle with rounded edges.
-		padding = 0 # Padding from the edges of the window
-		rounded = radius # How round to make the edges
-		cr = bitmap.cairo_create()
-		cr.set_source_rgb(0,0,0)
-		# Move to top corner
-		cr.move_to(0+padding+rounded, 0+padding)
+        self.init_widget(path, custom_manifest)
+        Gtk.main()
 
-		# Top right corner and round the edge
-		cr.line_to(w-padding-rounded, 0+padding)
-		cr.arc(w-padding-rounded, 0+padding+rounded, rounded, math.pi/2, 0)
+    # ---- module loading -------------------------------------------------
 
-		# Bottom right corner and round the edge
-		cr.line_to(w-padding, h-padding-rounded)
-		cr.arc(w-padding-rounded, h-padding-rounded, rounded, 0, math.pi/2)
+    def importFromURI(self, uri, absl=False):
+        """Import a widget's Python module from a file path (imp is gone in 3.12)."""
+        if not absl:
+            uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
+        path, fname = os.path.split(uri)
+        mname, _ext = os.path.splitext(fname)
+        source = os.path.join(path, mname) + ".py"
+        if not os.path.exists(source):
+            return None
+        spec = importlib.util.spec_from_file_location(mname, source)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
-		# Bottom left corner and round the edge.
-		cr.line_to(0+padding+rounded, h-padding)
-		cr.arc(0+padding+rounded, h-padding-rounded, rounded, math.pi+math.pi/2, math.pi)
+    # ---- window shaping (GTK3: cairo regions, Pixmap is gone) -----------
 
-		# Top left corner and round the edge
-		cr.line_to(0+padding, 0+padding+rounded)
-		cr.arc(0+padding+rounded, 0+padding+rounded, rounded, math.pi/2, 0)
+    @staticmethod
+    def _shape(widget, surface):
+        """Clip the widget's window to the opaque pixels of an ARGB surface."""
+        region = Gdk.cairo_region_create_from_surface(surface)
+        widget.shape_combine_region(region)
+        widget.show()
 
-		# Fill in the shape.
-		cr.fill()
+    def reshaperect(self, widget, allocation, radius=0):
+        w, h = allocation.width, allocation.height
+        r = radius
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+        cr = cairo.Context(surface)
+        cr.set_source_rgba(0, 0, 0, 1)
+        cr.new_sub_path()
+        cr.arc(w - r, r, r, -math.pi / 2, 0)
+        cr.arc(w - r, h - r, r, 0, math.pi / 2)
+        cr.arc(r, h - r, r, math.pi / 2, math.pi)
+        cr.arc(r, r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+        cr.fill()
+        self._shape(widget, surface)
 
-		# Set the window shape
-		obj.shape_combine_mask(bitmap, 0, 0)
-		obj.show()
+    def reshapecircle(self, widget, allocation):
+        w, h = allocation.width, allocation.height
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+        cr = cairo.Context(surface)
+        cr.set_source_rgba(0, 0, 0, 1)
+        cr.arc(w / 2, h / 2, min(h, w) / 2, 0, 2 * math.pi)
+        cr.fill()
+        self._shape(widget, surface)
 
+    def reshapemask(self, widget, allocation, mask):
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file(mask)
+        surface = Gdk.cairo_surface_create_from_pixbuf(pixbuf, 1, None)
+        self._shape(widget, surface)
 
-    # Reshape the window into a circle
-	def reshapecircle(self, obj, allocation):
-		w, h = allocation.width, allocation.height
-		bitmap = self.prepareBitmap(allocation.width, allocation.height)
-		
-		# Draw our shape into the bitmap using cairo      
-		cr = bitmap.cairo_create()
-		cr.set_source_rgb(0,0,0)
-		cr.arc(w/2,h/2,min(h,w)/2,0,2*math.pi)
-		cr.fill()
+    # ---- transparency (GTK3: rgba visual + app_paintable) ---------------
 
-		# Set the window shape
-		obj.shape_combine_mask(bitmap, 0, 0)
-		obj.show()
-	
-	#TODO:
-	def reshapemask(self, obj, allocation, mask):
-		bitmap = self.prepareBitmap(allocation.width, allocation.height)
-		
-		bitmap.draw_pixbuf(None, gtk.gdk.pixbuf_new_from_file(mask), 0, 0, 0, 0)
-		
-		obj.shape_combine_mask(bitmap, 0, 0)
-		obj.show()
-		
-		
-	##
-	# Function that makes a gtk.Widget transparent through
-	# gtk.Widget.set_colormap. Used in {@link #prepare prepare method}
-	#
-	# @param 	widget	gtk.Widget object
-	# @return 	bool	success
-	def transparent_window (self, widget):
-		screen = widget.get_screen()
-		colormap = screen.get_rgba_colormap()
-		if colormap != None:
-			widget.set_colormap(colormap)
-			return True
-		else:
-			return False
-	
-	#from pygtk documentation
-	def transparent_expose (self, widget, event):
-		cr = widget.window.cairo_create()
-		cr.set_operator(cairo.OPERATOR_CLEAR)
+    def transparent_window(self, widget):
+        screen = widget.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual is not None:
+            widget.set_visual(visual)
+            return True
+        return False
 
-		region = gtk.gdk.region_rectangle(event.area)
-		cr.region(region)
-		cr.fill()
-		
-		return False
-	##
-	# LOL!
-	def dict_key_exists(self, dict, key):
-		return key in dict
-		
-		
-	##
-	# On main droplet window 'configure-event', store current 
-	# X, Y coordinates. Binded in {@link #prepare prepare method}
-	# 
-	# @param	w	gtk.Window object
-	# @param	e	gtk.gdk.Event object
-	def on_configure(self, w, e):
-		self.temp['x'], self.temp['y'] = w.get_position()
+    def set_to_transparent(self):
+        self.transparent_window(self.window)
+        self.window.set_app_paintable(True)
+        self.browser.set_background_color(Gdk.RGBA(0, 0, 0, 0))
 
+    # ---- window geometry persistence ------------------------------------
 
-	##
-	# On main droplet window 'focus-out-event', write coordinates 
-	# to manifest file. Binded in {@link #prepare prepare method}
-	# 
-	# @param	w	gtk.Window object
-	# @param	e	gtk.gdk.Event object	
-	def on_focus_out(self, w=None, e=None):
-		if self.manifest.x != self.temp['x'] or self.manifest.y != self.temp['y']:
-			self.manifest.set('x', self.temp['x'])
-			self.manifest.set('y', self.temp['y'])
-			self.manifest.dump_manifest(self.manifest.path)
+    def on_configure(self, w, e):
+        self.temp["x"], self.temp["y"] = w.get_position()
 
-	##
-	# On webkit.WebView 'title-changed' event, recieve and parse
-	# JSON from title and call a corespondant fuction from imported 
-	# executable. It sends back the result at the end.
-	# Can call some predefined functions od this module that start with "droplet_"
-	# Binded in {@link #prepare prepare method}
-	#
-	# JSON message format:
-	#	{
-	#		"method": "<function name>",
-	#		"args": {
-	#			"<argument name>": <argument value>
-	#			}
-	#	}
-	# 
-	# @param	msg		 JSON string
-	def recieve(self, msg):
-		if msg != 'null' and self.manifest.origin == 'local':
-			#TODO TRY AND CATCH all data passed by other developers
-			packet = json.loads(msg)
-			if packet['method'].startswith('droplet_'):
-				fn = getattr(self, packet['method'])
-			else:
-				fn = getattr(self.module, packet['method'])
-				
-				if self.dict_key_exists(packet['args'], 'gtk'):
-					packet['args']['gtk'] = gtk
-				if self.dict_key_exists(packet['args'], 'browser'):
-					packet['args']['browser'] = browser
-				if self.dict_key_exists(packet['args'], 'window'):
-					packet['args']['window'] = window 
-			if fn:
-				result = fn(**packet['args'])
-				self.send(result)
-				
-	##
-	# Convers a gtk events and DND gtk events to JSON to enable the connection from JavaScript
-	def event_to_json(self, w, *args):
-		dict = {}
-		#on gtk event
-		if(isinstance(args[0], gtk.gdk.Event)):
-			dict = self.attrs_to_dict(args[0])
-			dict['type'] = args[0].type.value_name
-		elif(isinstance(args[0], gtk.gdk.DragContext)): #on drag context, what is the point of this lol... but let it stay, i was tired and stupid
-			print args[0].drag_get_selection()
-			dict = {
-				'targets': args[0].targets,
-				'uris': args[3].get_uris(),
-				'x': args[1],
-				'y': args[2],
-				'text': args[3].get_text()
-			}
-		self.browser.execute_script(args[len(args)-1]+"""('"""+str(json.dumps(dict))+"""');""")
-	
-	
-	def attrs_to_dict(self, obj):
-		attribs = dir(obj)
-		result = {}
-		for v in attribs:
-			attr = getattr(obj,v)
-			t = type(attr)
-			if t is str or t is int or t is bool or t is float:
-				result[v] = attr
-	
-		return result
-	
-	
-	def send(self, msg):
-		self.browser.execute_script('droplets.recieve("'+str(msg)+'");')
-	
-	#TODO: MINIMIZE, MAXIMIZE, Reload, get position, get size, Open Settings... and such
-	def droplet_connect(self, object, event, callback):
-		obj = getattr(self, object)
-		obj.connect(event, self.event_to_json, callback)
+    def on_focus_out(self, w=None, e=None):
+        if self.manifest.x != self.temp["x"] or self.manifest.y != self.temp["y"]:
+            self.manifest.set("x", self.temp["x"])
+            self.manifest.set("y", self.temp["y"])
+            self.manifest.dump_manifest(self.manifest.path)
 
-	def droplet_drag(self, button, x, y, time):
-		self.window.begin_move_drag(button, int(x), int(y), time)
-	
-	def drag_event_wrapper(self, w, e): 
-		if e.button == 1:
-			self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
-	
-	def droplet_move_enable(self, browser=None, manifest=None):
-		if browser is None: browser = self.browser
-		if manifest is None: manifest = self.manifest
-		self.drag_handler_id = browser.connect('button-press-event', self.drag_event_wrapper)
-		manifest.drag = True
-	
-	def droplet_move_disable(self, browser=None, manifest=None):
-		if browser is None: browser = self.browser
-		if manifest is None: manifest = self.manifest
-		browser.disconnect(self.drag_handler_id)
-		manifest.drag = False
-	
-	def droplet_move(self, x, y):
-		self.window.move(int(x), int(y))
-	
-	def droplet_deactivate(self, w=None, e=None):
-		self.on_focus_out()
-		gtk.main_quit()
-		raise SystemExit	
-	
-	def set_to_transparent(self):
-		self.transparent_window(self.window)
-		self.browser.set_transparent(True) #set the webview transparency (no background on body)
-		self.browser.connect('expose-event', self.transparent_expose)
-	
-	def toggleProperty(self, w, e):
-		label = w.get_label()
-		parsed = re.match('^(?P<pref>.*:\s*)(?P<state>.*)$', label)
-		state = parsed.group('state').lower()
-		pref = parsed.group('pref')
-		action = re.match('^\s*(?P<action>[a-zA-Z]*)\s*:\s*$', pref).group('action').lower()
+    # ---- JS <-> Python bridge -------------------------------------------
 
-		if state == 'off':
-			fn = getattr(self, 'droplet_'+action+'_disable')
-			w.set_label(pref+'On')
-		elif state == 'on':
-			fn = getattr(self, 'droplet_'+action+'_enable')
-			w.set_label(pref+'Off')
-		fn()
-	
-	def widgetContextMenu(self):
-		#TODO: ONLY ON WIDGETS!!! toggle bool in manifest
-		menu = gtk.Menu()
-		properties_menu = gtk.Menu()
-		remove_menu = gtk.Menu()
-		
-		def detachFn(*args):
-			print args
-		menu.attach_to_widget(self.browser, detachFn) ##TODO: see what a fuckin' detach function is
-	
-		move = gtk.MenuItem("Move: Off")
-		stick = gtk.MenuItem("Stick: Off")
-		bottom = gtk.MenuItem("Bottom: Off")
-		above = gtk.MenuItem("Above: Off")
-		properties = gtk.MenuItem("Properties")
-		properties.set_submenu(properties_menu)
-		settings = gtk.MenuItem("Settings")
-	
-		remove_submenu = gtk.MenuItem("Deactivate")
-		remove_submenu.set_submenu(remove_menu)
-		remove = gtk.MenuItem("X")
-		remove_menu.append(remove);
-	
-		properties_menu.append(move)
-		properties_menu.append(stick)
-		properties_menu.append(bottom)
-		properties_menu.append(above)
-		menu.append(properties)
-		menu.append(settings)
-		menu.append(remove_submenu)
-		move.show()
-		stick.show()
-		bottom.show()
-		above.show()
-		properties.show()
-		properties_menu.show()
-		settings.show()
-		remove.show()
-		remove_submenu.show()
-	
-		move.connect('button-press-event', self.toggleProperty)
-		remove.connect('button-press-event', self.droplet_deactivate)
-	
-		#XXX Watch it... self, widget, event, menu
-		def _on_button_press_event(self, event, menu):
-			if event.button == 3:
-				menu.popup(None, None, None, 0, event.time)
-				pass
-	
-		self.browser.connect('button_press_event',_on_button_press_event, menu)
-	
-	
-	##
-	# Window prepare and embed webview
-	def prepare_widget(self, manifest, module, path):
-		
-		window = gtk.Window()
-		self.window = window
-		browser = webkit.WebView()
-		self.browser = browser
-		self.manifest = manifest
-		self.module = module
-		
-		
-		window.set_resizable(manifest.resizable)
-		window.set_keep_below(manifest.below)
-		window.set_keep_above(manifest.above)
-		window.set_skip_taskbar_hint(manifest.skip_taskbar)
-		window.set_skip_pager_hint(manifest.skip_pager)
-		window.set_decorated(manifest.decorated)		
+    def _on_script_message(self, user_content_manager, message):
+        """script-message-received::droplet -> dispatch to widget module."""
+        self.recieve(message.get_js_value().to_string())
 
-		if manifest.transparent:
-			self.set_to_transparent()
+    def recieve(self, msg):
+        if msg == "null" or self.manifest.origin != "local":
+            return
+        packet = json.loads(msg)
+        if packet["method"].startswith("droplet_"):
+            fn = getattr(self, packet["method"], None)
+        else:
+            fn = getattr(self.module, packet["method"], None)
+            args = packet.get("args", {})
+            if "gtk" in args:
+                args["gtk"] = Gtk
+            if "browser" in args:
+                args["browser"] = self.browser
+            if "window" in args:
+                args["window"] = self.window
+        if fn:
+            result = fn(**packet.get("args", {}))
+            self.send(result)
 
-		if manifest.title != None:
-			window.set_title(manifest.title)
+    def send(self, msg):
+        self._run_js('droplets.recieve("%s");' % msg)
 
-		if manifest.stick:
-			window.stick()
-		
-		if manifest.icon != None:
-			window.set_icon_from_file (path + manifest.icon)
-		
-		if manifest.drag:
-			self.droplet_move_enable(browser, manifest)
-		
-		window.connect('configure-event', self.on_configure)
-		window.connect('focus-out-event', self.on_focus_out)
-		#TODO: on destroy
-		window.connect('destroy', self.droplet_deactivate)
-		
-		
-		#set browsers settings
-		browser_settings = browser.get_settings()
-		
-		#XXX: Should it be always false?
-		browser_settings.set_property('enable-default-context-menu', manifest.default_context_menu)
-		browser_settings.set_property('enable-webaudio', 1)
-		browser_settings.set_property('enable-webgl', 1)
-		browser_settings.set_property('default-encoding', 'utf8')
-		browser_settings.set_property('enable-accelerated-compositing', 1)
-		
-		if manifest.origin == 'local':	
-			browser_settings.set_property('enable-universal-access-from-file-uris', 1)
-		browser_settings.set_property('enable-plugins', 0)
-		browser_settings.set_property('enable-page-cache', 1)
-		
+    def _run_js(self, script):
+        self.browser.run_javascript(script, None, None, None)
 
-		if manifest.origin == 'local': 
-			browser.execute_script("var droplets = {}; droplets.send = function(command) { document.title = 'null'; if(command != undefined) document.title = command;}")
-			
-			#Enable communication over title changed
-			if module != None:
-				def on_title_change_wrapper(w, e, title): self.recieve(title)
-				browser.connect('title-changed', on_title_change_wrapper)
-				
-				
-		self.widgetContextMenu()
-		
-		#TODO: Widgets can be either completely local or completely remote in a sense of resources. A web widget cannot have a communication with the system, a local widget cannot have a communication to the web through HTTP, only through python interface, thus disabling a chance that it can accidentaly load malicius scripts that can be changed by the third party
-		# Web widgets have alerts and popups blocked completely.
-		# In every local python script there will be enabled a function for curl requests and responses and a way to store data
-		def redirectNavigLocal (web_view, frame, request, navigation_action, policy_decision):
-			
-			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
-			uri = request.get_uri()
-			
-			if not uri.startswith('file://'):
-				policy_decision.ignore()
-				return True
-			
-			if reason == 'OTHER' and self.root_url == None:
-				self.root_url = '/'.join(uri.split('/')[:-1])
-				policy_decision.use()
-				return True
-			
-			if not uri.startswith(self.root_url):
-				policy_decision.ignore()
-				call(["xdg-open", uri])
-				return True
-		
-		if manifest.origin =='local': browser.connect('navigation-policy-decision-requested', redirectNavigLocal)
-		
-		def redirectNavigRemote (web_view, frame, request, navigation_action, policy_decision):
-			reason = re.match('^WEBKIT_WEB_NAVIGATION_REASON_(?P<reason>[A-Z0-9_]*)$', navigation_action.get_reason().value_name).group('reason')
-			uri = request.get_uri()
-			
-			if reason == 'OTHER' and self.root_url == None:
-				self.root_url = '/'.join(uri.split('/')[:-1])
-				policy_decision.use()
-				return True
-			
-			if not uri.startswith(self.root_url):
-				policy_decision.ignore()
-				return True
-				
-		
-		if manifest.origin =='remote' or manifest.origin == 'hosted': browser.connect('navigation-policy-decision-requested', redirectNavigRemote)
-		
-		def banRemoteRequests (web_view, frame, web_resource, request, response):
-			if not request.get_uri().startswith('file://'):
-				request.set_uri('about:blank')
-				
-		if manifest.origin == 'local': browser.connect('resource-request-starting', banRemoteRequests)
-		
-		#Ban other mime type to be loaded into the webview, only text/html is allowed
-		def banOtherMime (web_view, frame, request, mimetype, policy_decision):
-			if mimetype != 'text/html':
-				policy_decision.ignore()
-				return True
-			
-		browser.connect('mime-type-policy-decision-requested', banOtherMime)
-		
-		props = browser.get_window_features()
-		print props.get_property('scrollbar-visible')
-		
-		#add a browser to window
-		child = browser
-		if manifest.type == 'app':
-			child = gtk.ScrolledWindow()
-			child.add(browser)
-		
-		window.add(child)
-		
-		#set viewport size	
-		window.resize(manifest.width, manifest.height)
-		
-		
-		#set window shape if defined
-		if manifest.shape == 'roundedrect':
-			window.connect('size-allocate', self.reshaperect, manifest.corner_radius)
-		if manifest.shape == 'circle':
-			window.connect('size-allocate', self.reshapecircle)
-		
-		if manifest.shape == 'mask':
-			window.connect('size-allocate', self.reshapemask, manifest.shape_mask)
-		
-		if not manifest.hidden:
-			window.show_all()
-		
-		if manifest.x != None and manifest.y != None:
-			window.move(manifest.x , manifest.y)
-		
-		#set window opacity on webview load
-		def on_load_wrapper(w,e): window.set_opacity(manifest.opacity)
-		browser.connect('load-finished', on_load_wrapper)
-		
-	
-		return window, browser
-		
-	
-	
-	
-	def load_widget(self, browser, origin, source):
-		if origin != 'hosted':
-			file = os.path.abspath(source)
-			source = 'file://' + urllib.pathname2url(file)
-		browser.load_uri(source)
-	
-			
-	def init_widget(self, path, custom_manifest = None):
-		manifest_file = 'manifest.json' #XXX: lol
-	
-		if path[len(path)-1] != '/':
-			path = path + '/'
-			
-		path_to_manifest = None
-		if custom_manifest is not None:
-			path_to_manifest = custom_manifest
-		else:
-			path_to_manifest = path+manifest_file
-			
-		manifest = Manifest(path_to_manifest)
-		self.temp['x'] = manifest.x
-		self.temp['y'] = manifest.y
-		module = self.importFromURI(os.path.join(path, manifest.executable), True)
-		window,browser = self.prepare_widget(manifest, module, path)
-		
-		self.load_widget(browser, manifest.origin, path+manifest.source)
-	
-		return manifest, module, window, browser
-	
-		
-	def __init__(self, path, custom_manifest = None):
-		 self.init_widget(path, custom_manifest)
-		 gtk.main()
-		 
+    def event_to_json(self, w, *args):
+        """Convert a GDK event (or drag context) to JSON and hand it to a JS callback."""
+        data = {}
+        if isinstance(args[0], Gdk.Event):
+            data = self.attrs_to_dict(args[0])
+            data["type"] = args[0].type.value_name
+        elif isinstance(args[0], Gdk.DragContext):
+            data = {
+                "targets": args[0].list_targets(),
+                "uris": args[3].get_uris(),
+                "x": args[1],
+                "y": args[2],
+                "text": args[3].get_text(),
+            }
+        self._run_js("%s('%s');" % (args[-1], json.dumps(data)))
+
+    @staticmethod
+    def attrs_to_dict(obj):
+        result = {}
+        for name in dir(obj):
+            attr = getattr(obj, name)
+            if isinstance(attr, (str, int, bool, float)):
+                result[name] = attr
+        return result
+
+    # ---- droplet_* actions callable from JS -----------------------------
+
+    def droplet_connect(self, object, event, callback):
+        obj = getattr(self, object)
+        obj.connect(event, self.event_to_json, callback)
+
+    def droplet_drag(self, button, x, y, time):
+        self.window.begin_move_drag(button, int(x), int(y), time)
+
+    def drag_event_wrapper(self, w, e):
+        if e.button == 1:
+            self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
+
+    def droplet_move_enable(self, browser=None, manifest=None):
+        if browser is None:
+            browser = self.browser
+        if manifest is None:
+            manifest = self.manifest
+        self.drag_handler_id = browser.connect("button-press-event", self.drag_event_wrapper)
+        manifest.drag = True
+
+    def droplet_move_disable(self, browser=None, manifest=None):
+        if browser is None:
+            browser = self.browser
+        if manifest is None:
+            manifest = self.manifest
+        browser.disconnect(self.drag_handler_id)
+        manifest.drag = False
+
+    def droplet_move(self, x, y):
+        self.window.move(int(x), int(y))
+
+    def droplet_deactivate(self, w=None, e=None):
+        self.on_focus_out()
+        Gtk.main_quit()
+
+    # ---- context menu ---------------------------------------------------
+
+    def toggleProperty(self, w, e):
+        label = w.get_label()
+        parsed = re.match(r"^(?P<pref>.*:\s*)(?P<state>.*)$", label)
+        state = parsed.group("state").lower()
+        pref = parsed.group("pref")
+        action = re.match(r"^\s*(?P<action>[a-zA-Z]*)\s*:\s*$", pref).group("action").lower()
+
+        if state == "off":
+            fn = getattr(self, "droplet_" + action + "_disable")
+            w.set_label(pref + "On")
+        elif state == "on":
+            fn = getattr(self, "droplet_" + action + "_enable")
+            w.set_label(pref + "Off")
+        fn()
+
+    def widgetContextMenu(self):
+        menu = Gtk.Menu()
+        properties_menu = Gtk.Menu()
+        remove_menu = Gtk.Menu()
+
+        def detachFn(*args):
+            print(args)
+
+        menu.attach_to_widget(self.browser, detachFn)
+
+        move = Gtk.MenuItem(label="Move: Off")
+        stick = Gtk.MenuItem(label="Stick: Off")
+        bottom = Gtk.MenuItem(label="Bottom: Off")
+        above = Gtk.MenuItem(label="Above: Off")
+        properties = Gtk.MenuItem(label="Properties")
+        properties.set_submenu(properties_menu)
+        settings = Gtk.MenuItem(label="Settings")
+
+        remove_submenu = Gtk.MenuItem(label="Deactivate")
+        remove_submenu.set_submenu(remove_menu)
+        remove = Gtk.MenuItem(label="X")
+        remove_menu.append(remove)
+
+        properties_menu.append(move)
+        properties_menu.append(stick)
+        properties_menu.append(bottom)
+        properties_menu.append(above)
+        menu.append(properties)
+        menu.append(settings)
+        menu.append(remove_submenu)
+        menu.show_all()
+
+        move.connect("button-press-event", self.toggleProperty)
+        remove.connect("button-press-event", self.droplet_deactivate)
+
+        def _on_button_press_event(widget, event, menu):
+            if event.button == 3:
+                menu.popup_at_pointer(event)
+
+        self.browser.connect("button-press-event", _on_button_press_event, menu)
+
+    # ---- window setup ---------------------------------------------------
+
+    def prepare_widget(self, manifest, module, path):
+        window = Gtk.Window()
+        self.window = window
+        self.manifest = manifest
+        self.module = module
+
+        # Bridge: JS -> Python over a WebKit2 script-message handler.
+        ucm = WebKit2.UserContentManager()
+        ucm.register_script_message_handler("droplet")
+        ucm.connect("script-message-received::droplet", self._on_script_message)
+        ucm.add_script(
+            WebKit2.UserScript.new(
+                _BRIDGE_SHIM,
+                WebKit2.UserContentInjectedFrames.TOP_FRAME,
+                WebKit2.UserScriptInjectionTime.START,
+                None,
+                None,
+            )
+        )
+        browser = WebKit2.WebView.new_with_user_content_manager(ucm)
+        self.browser = browser
+
+        window.set_resizable(manifest.resizable)
+        window.set_keep_below(manifest.below)
+        window.set_keep_above(manifest.above)
+        window.set_skip_taskbar_hint(manifest.skip_taskbar)
+        window.set_skip_pager_hint(manifest.skip_pager)
+        window.set_decorated(manifest.decorated)
+
+        if manifest.transparent:
+            self.set_to_transparent()
+
+        if manifest.title is not None:
+            window.set_title(manifest.title)
+
+        if manifest.stick:
+            window.stick()
+
+        if manifest.icon is not None:
+            window.set_icon_from_file(path + manifest.icon)
+
+        if manifest.drag:
+            self.droplet_move_enable(browser, manifest)
+
+        window.connect("configure-event", self.on_configure)
+        window.connect("focus-out-event", self.on_focus_out)
+        window.connect("destroy", self.droplet_deactivate)
+
+        settings = browser.get_settings()
+        settings.set_property("enable-webaudio", True)
+        settings.set_property("enable-webgl", True)
+        settings.set_property("default-charset", "utf-8")
+        settings.set_property("enable-page-cache", True)
+        if manifest.origin == "local":
+            settings.set_property("enable-universal-access-from-file-uris", True)
+
+        # No default WebKit context menu unless the manifest asks for it.
+        if not manifest.default_context_menu:
+            browser.connect("context-menu", lambda *a: True)
+
+        self.widgetContextMenu()
+
+        # Navigation / response policy (replaces WebKit1 *-policy-decision-requested).
+        browser.connect("decide-policy", self._on_decide_policy)
+
+        # ponytail: WebKit1's per-subresource ban (banRemoteRequests) needs a
+        # WebKit2 web-process extension to reimplement; decide-policy below still
+        # blocks top-level/frame navigation off file:// for local origins.
+
+        child = browser
+        if manifest.type == "app":
+            child = Gtk.ScrolledWindow()
+            child.add(browser)
+        window.add(child)
+
+        window.resize(manifest.width, manifest.height)
+
+        if manifest.shape == "roundedrect":
+            window.connect("size-allocate", self.reshaperect, manifest.corner_radius)
+        if manifest.shape == "circle":
+            window.connect("size-allocate", self.reshapecircle)
+        if manifest.shape == "mask":
+            window.connect("size-allocate", self.reshapemask, manifest.shape_mask)
+
+        if not manifest.hidden:
+            window.show_all()
+
+        if manifest.x is not None and manifest.y is not None:
+            window.move(manifest.x, manifest.y)
+
+        browser.connect("load-changed", self._on_load_changed, manifest.opacity)
+
+        return window, browser
+
+    def _on_load_changed(self, web_view, load_event, opacity):
+        if load_event == WebKit2.LoadEvent.FINISHED:
+            self.window.set_opacity(opacity)
+
+    def _on_decide_policy(self, web_view, decision, decision_type):
+        if decision_type == WebKit2.PolicyDecisionType.RESPONSE:
+            # Only render text/html; ignore other main/frame responses.
+            if decision.get_response().get_mime_type() != "text/html":
+                decision.ignore()
+                return True
+            return False
+
+        if decision_type not in (
+            WebKit2.PolicyDecisionType.NAVIGATION_ACTION,
+            WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION,
+        ):
+            return False
+
+        nav_action = decision.get_navigation_action()
+        uri = nav_action.get_request().get_uri()
+        is_initial = nav_action.get_navigation_type() == WebKit2.NavigationType.OTHER
+
+        if self.manifest.origin == "local":
+            if not uri.startswith("file://"):
+                decision.ignore()
+                return True
+            if is_initial and self.root_url is None:
+                self.root_url = uri.rsplit("/", 1)[0]
+                decision.use()
+                return True
+            if not uri.startswith(self.root_url):
+                decision.ignore()
+                call(["xdg-open", uri])
+                return True
+            return False
+
+        # remote / hosted
+        if is_initial and self.root_url is None:
+            self.root_url = uri.rsplit("/", 1)[0]
+            decision.use()
+            return True
+        if not uri.startswith(self.root_url):
+            decision.ignore()
+            return True
+        return False
+
+    # ---- loading --------------------------------------------------------
+
+    def load_widget(self, browser, origin, source):
+        if origin != "hosted":
+            file = os.path.abspath(source)
+            source = "file://" + urllib.request.pathname2url(file)
+        browser.load_uri(source)
+
+    def init_widget(self, path, custom_manifest=None):
+        if not path.endswith("/"):
+            path = path + "/"
+
+        path_to_manifest = custom_manifest if custom_manifest is not None else path + "manifest.json"
+
+        manifest = Manifest(path_to_manifest)
+        self.temp["x"] = manifest.x
+        self.temp["y"] = manifest.y
+        module = self.importFromURI(os.path.join(path, manifest.executable), True)
+        window, browser = self.prepare_widget(manifest, module, path)
+
+        self.load_widget(browser, manifest.origin, path + manifest.source)
+
+        return manifest, module, window, browser
