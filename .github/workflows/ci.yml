@@ -15,5 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Byte-compile all sources (catches syntax errors in GTK/widget modules tests can't import)
+        run: python -m compileall -q apps droplets system droplets.py
       - name: Run headless manifest tests
         run: python tests/test_manifest.py
