@@ -101,13 +101,28 @@ Fun projects to test and perfect the framework(sorted by complexity):
 [ ] Build a debian distro... i always wanted that, ambicious arent i?
 
 
+Backends
+--------
+There are two window/webview backends. The launcher picks one automatically:
+
+* **gtk** (Linux) — GTK 3 + WebKitGTK + Cairo. The only backend with arbitrary
+  pixmap window masks (X11 SHAPE). Default on Linux.
+* **pywebview** (macOS/Windows) — the platform-native webview (WKWebView on
+  macOS, WebView2 on Windows). Lets the project be developed and run on a Mac
+  without a Linux VM. No arbitrary mask API — frameless + transparent shaping
+  only (rounded/circle/PNG-alpha via CSS).
+
+Both expose the same `droplets.send(cmd)` / `droplets.recieve(result)` JS bridge
+and the same `allowed_methods` gate, so widgets run unchanged on either.
+
+Override the auto-pick with `DROPLETS_BACKEND=gtk` or `DROPLETS_BACKEND=pywebview`.
+
 Dependencies
 ------------
-python-webkit 
+gtk backend (Linux): PyGObject (gi) with Gtk 3.0 + WebKit2, and pycairo.
 
-python-gtk2 >= 2.9
-
-python-cairo
+pywebview backend (macOS/Windows): `pip install pywebview` (pulls in pyobjc on
+macOS, pythonnet on Windows).
 
 Literature
 ----------
