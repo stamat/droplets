@@ -143,6 +143,12 @@ class Droplet:
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
         else:
+            # Optional allowlist: when manifest.allowed_methods is set, only those
+            # module functions are callable from JS (the hybrid-tier gate). Absent
+            # (null) keeps the legacy behaviour of exposing every module function.
+            allowed = getattr(self.manifest, "allowed_methods", None)
+            if allowed is not None and packet["method"] not in allowed:
+                return
             fn = getattr(self.module, packet["method"], None)
             args = packet.get("args", {})
             if "gtk" in args:

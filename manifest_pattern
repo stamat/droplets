@@ -26,5 +26,6 @@
 	"hidden": [false, 0],
 	"transparent": [false, 0],
 	"opacity": [1, 0],
-	"shape_mask": [null, 0]
+	"shape_mask": [null, 0],
+	"allowed_methods": [null, 0]
 }

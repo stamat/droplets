@@ -27,6 +27,14 @@ def test_defaults_and_overrides():
         assert m.origin == "local"       # default from pattern
 
 
+def test_allowed_methods_default_and_override():
+    with tempfile.TemporaryDirectory() as d:
+        path = _write(d, "manifest.json", {"width": 1, "height": 1})
+        assert Manifest(path).allowed_methods is None          # default: no gate
+        path2 = _write(d, "m2.json", {"width": 1, "height": 1, "allowed_methods": ["hello"]})
+        assert Manifest(path2).allowed_methods == ["hello"]
+
+
 def test_missing_mandatory_raises():
     with tempfile.TemporaryDirectory() as d:
         # width & height are mandatory in manifest_pattern; omit them.
@@ -58,6 +66,7 @@ def test_no_shared_mandatory_between_instances():
 
 if __name__ == "__main__":
     test_defaults_and_overrides()
+    test_allowed_methods_default_and_override()
     test_missing_mandatory_raises()
     test_set_updates_attr_and_dict()
     test_no_shared_mandatory_between_instances()
