@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Byte-compile all sources (catches syntax errors in GTK/widget modules tests can't import)
+        run: python -m compileall -q apps droplets system droplets.py
+      - name: Run headless manifest tests
+        run: python tests/test_manifest.py

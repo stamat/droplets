@@ -3,7 +3,7 @@ def hello(msg):
 	
 def execute(command):
 	import subprocess as sub
-	p = sub.Popen(command,stdout=sub.PIPE,stderr=sub.PIPE)
+	p = sub.Popen(command, stdout=sub.PIPE, stderr=sub.PIPE, text=True)
 	output, errors = p.communicate()
 	output = output.split('\n')
 	return output

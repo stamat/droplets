@@ -1,41 +1,36 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ##
 # Project: DROPLETS
 # ~ Linux and Windows Web GUI and Widget framework.~
 # www.droplets.info
-# December 2012. Armageddon :P
 #
 # @author Nikola Stamatovic Stamat <stamat@ivartech.com>
 ##
 
-#==== BUGS ====#
-#TODO: Browser resize on URL change! Forbid resize!
+import argparse
+import sys
 
-import sys, gtk
-import re
 from droplets.droplet import Droplet
-			
-def main(args):
-#	global path
-#	if path[len(path)-1] != '/':
-#		path = path + '/'
-	
-	mfest = None
-	try:	
-		mfest = sys.argv[2]
-	except IndexError:
-		pass
-	
-	
-	path = sys.argv[1]
 
 
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="droplets",
+        description="Launch a droplet widget/app from its directory.",
+    )
+    parser.add_argument("path", help="path to the widget/app directory")
+    parser.add_argument(
+        "manifest",
+        nargs="?",
+        default=None,
+        help="optional custom manifest.json (defaults to <path>/manifest.json)",
+    )
+    args = parser.parse_args(argv)
 
-	mainDrop = Droplet(path, mfest)
-	
-	
+    Droplet(args.path, args.manifest)
+    return 0
 
-if __name__ == '__main__':
-    sys.exit(main(sys.argv))    
 
+if __name__ == "__main__":
+    sys.exit(main())
