@@ -156,7 +156,9 @@ class Droplet:
             self.send(result)
 
     def send(self, msg):
-        self._run_js('droplets.recieve("%s");' % msg)
+        # json.dumps yields a safe JS literal; raw %-interpolation broke (or let
+        # a widget inject) on any payload containing quotes/newlines/</script>.
+        self._run_js("droplets.recieve(%s);" % json.dumps(msg))
 
     def _run_js(self, script):
         self.browser.run_javascript(script, None, None, None)
