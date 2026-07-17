@@ -2,7 +2,7 @@
 
 ##
 # Project: DROPLETS
-# ~ Linux and Windows Web GUI and Widget framework.~
+# ~ Linux, macOS and Windows Web GUI and Widget framework.~
 # www.droplets.info
 #
 # @author Nikola Stamatovic Stamat <stamat@ivartech.com>
@@ -11,7 +11,7 @@
 import argparse
 import sys
 
-from droplets.droplet import Droplet
+from droplets.backend import get_droplet
 
 
 def main(argv=None):
@@ -28,7 +28,7 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    Droplet(args.path, args.manifest)
+    get_droplet()(args.path, args.manifest)
     return 0
 
 
