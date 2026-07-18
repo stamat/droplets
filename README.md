@@ -16,6 +16,10 @@ Security model is very simple:
 
 Or if you haven’t heard about Chrome apps, it is like PhoneGap for the Linux desktop combined with Dashboard Widgets, or Windows Gadgets but more secure.
 
+**Writing a droplet?** See [`DROPLETS.md`](DROPLETS.md) — quick start, every
+manifest field, runtime settings, and how to granulate what JavaScript may call
+in Python (`allowed_methods`).
+
 
 Notes
 -----
