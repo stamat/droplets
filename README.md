@@ -138,4 +138,9 @@ ivartech
 
 Licence
 -------
-Havent decided yet...
+MIT — see the `LICENSE` file.
+
+Note: bundled example apps may carry their own third-party licenses. The
+`apps/calculator` widget is old Apple Dashboard code and stays Apple Inc.'s
+property under Apple's license — see `apps/calculator/NOTICE`. It is not
+covered by the MIT license above.
