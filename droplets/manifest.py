@@ -22,6 +22,12 @@ _ENUMS = {
     "shape": ("rect", "roundedrect", "circle", "mask"),
 }
 
+# Runtime state a running droplet writes back (window moved/resized, which
+# screen it lives on). These live in a sibling settings.json, NOT the authored
+# manifest.json, so store updates never clobber the user's placement. Every key
+# is also in manifest_pattern, so its type is validated against that default.
+_SETTINGS_KEYS = ("x", "y", "screen", "width", "height")
+
 
 def _type_ok(value, default):
     """Is value's type compatible with the pattern default's type?
@@ -56,14 +62,32 @@ class Manifest:
         self.validate(manifest)
         self.apply_values(manifest)
 
+        # Overlay runtime settings (moved/resized/screen) on top of the authored
+        # manifest. Missing file = first run, no overrides.
+        self.settings_path = os.path.join(os.path.dirname(os.path.abspath(path)), "settings.json")
+        settings = self.load_settings()
+        self.validate_settings(settings)
+        self.settings = settings
+        self.apply_values(settings)
+
     @staticmethod
     def load_manifest(path):
         with open(path, "r") as mfile:
             return json.load(mfile)
 
-    def dump_manifest(self, path):
-        with open(path, "w") as mfile:
-            json.dump(self.dict, mfile, indent=4)
+    def load_settings(self):
+        if not os.path.exists(self.settings_path):
+            return {}
+        with open(self.settings_path, "r") as sfile:
+            return json.load(sfile)
+
+    def save_setting(self, **values):
+        """Persist runtime state to settings.json (never the authored manifest)."""
+        self.settings.update(values)
+        for key, value in values.items():
+            setattr(self, key, value)
+        with open(self.settings_path, "w") as sfile:
+            json.dump(self.settings, sfile, indent=4)
 
     def set(self, key, value):
         setattr(self, key, value)
@@ -103,6 +127,24 @@ class Manifest:
         if errors:
             raise ValueError(
                 "Invalid manifest %s:\n  - %s" % (self.path, "\n  - ".join(errors))
+            )
+
+    def validate_settings(self, settings):
+        """Check settings.json: only runtime keys, each the right type."""
+        errors = []
+        for key, value in settings.items():
+            if key not in _SETTINGS_KEYS:
+                errors.append(
+                    "unknown setting %r (allowed: %s)" % (key, ", ".join(_SETTINGS_KEYS))
+                )
+            elif not _type_ok(value, self.defaults.get(key)):
+                errors.append(
+                    "%r has wrong type: expected %s, got %s"
+                    % (key, type(self.defaults.get(key)).__name__, type(value).__name__)
+                )
+        if errors:
+            raise ValueError(
+                "Invalid settings %s:\n  - %s" % (self.settings_path, "\n  - ".join(errors))
             )
 
     def apply_values(self, manifest):

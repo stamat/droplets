@@ -106,6 +106,41 @@ def test_unknown_keys_pass_through():
         assert m.handle_enabled is False
 
 
+def test_settings_overlay_overrides_manifest():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {"width": 300, "height": 300})
+        _write(d, "settings.json", {"x": 10, "y": 20, "width": 640})
+        m = Manifest(os.path.join(d, "manifest.json"))
+        assert m.x == 10 and m.y == 20   # runtime state applied
+        assert m.width == 640            # settings override authored default
+        assert m.height == 300           # untouched by settings
+
+
+def test_save_setting_writes_only_settings_file():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {"width": 300, "height": 300})
+        m = Manifest(os.path.join(d, "manifest.json"))
+        m.save_setting(x=5, y=6)
+        assert m.x == 5 and m.settings["x"] == 5
+        with open(os.path.join(d, "settings.json")) as f:
+            assert json.load(f) == {"x": 5, "y": 6}
+        # authored manifest is never rewritten
+        with open(os.path.join(d, "manifest.json")) as f:
+            assert "x" not in json.load(f)
+
+
+def test_bad_settings_rejected():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {"width": 1, "height": 1})
+        _write(d, "settings.json", {"origin": "remote"})  # not a settings key
+        try:
+            Manifest(os.path.join(d, "manifest.json"))
+        except ValueError as e:
+            assert "origin" in str(e)
+        else:
+            raise AssertionError("expected ValueError for unknown setting key")
+
+
 def test_shipped_manifests_are_valid():
     # Every manifest in the repo must pass validation.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -125,5 +160,8 @@ if __name__ == "__main__":
     test_bad_type_rejected()
     test_bad_allowed_methods_rejected()
     test_unknown_keys_pass_through()
+    test_settings_overlay_overrides_manifest()
+    test_save_setting_writes_only_settings_file()
+    test_bad_settings_rejected()
     test_shipped_manifests_are_valid()
     print("ok")
