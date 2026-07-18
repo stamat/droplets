@@ -8,6 +8,8 @@ care which one runs:
     `droplets.recieve(result)` (the WebKit2 script-message handler is replaced
     by pywebview's `js_api`)
   - same `allowed_methods` gate on module calls (the hybrid-tier allowlist)
+  - same per-tier CSP: local widgets get the CSP meta baked in (droplets/csp.py)
+    and are loaded via load_html so remote subresources are blocked
 
 What pywebview can't do that GTK can (see PR review): arbitrary pixmap window
 masks (`reshapemask`) have no equivalent — you get frameless + transparent
@@ -26,6 +28,7 @@ import urllib.request
 
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
 
+from . import csp
 from .manifest import Manifest
 from .utils import import_from_uri
 
@@ -61,9 +64,20 @@ class Droplet:
         self.path = None
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
+        # For the local tier we load the CSP-injected entry doc via load_html
+        # (needs the GUI live), deferred to _start; see prepare_widget.
+        self._pending_html = None
+        self._pending_base = None
 
         self.init_widget(path, custom_manifest)
-        webview.start()
+        webview.start(self._start)
+
+    def _start(self):
+        # Runs once the GUI is ready. Load the CSP-injected local document with
+        # its own dir as base_uri (file:// origin + relative resources), so the
+        # widget never even briefly shows the un-CSP'd file.
+        if self._pending_html is not None:
+            self.window.load_html(self._pending_html, self._pending_base)
 
     # ---- JS <-> Python bridge (mirrors the GTK backend) -----------------
 
@@ -139,14 +153,30 @@ class Droplet:
         if manifest.x is not None and manifest.y is not None:
             kwargs["x"], kwargs["y"] = manifest.x, manifest.y
 
+        # Local tier: enforce the per-tier CSP (see droplets/csp.py). Read the
+        # entry doc, bake in the CSP meta, and defer loading it via load_html
+        # (with the widget dir as base_uri) to _start -- create the window with a
+        # blank placeholder so remote subresources can never load first. Every
+        # other tier loads its URL directly (remote/hosted may reach the web).
+        if manifest.origin == "local":
+            src = os.path.abspath(path + manifest.source)
+            with open(src, "r", encoding="utf-8") as f:
+                self._pending_html = csp.inject(f.read(), manifest.origin)
+            self._pending_base = (
+                "file://" + urllib.request.pathname2url(os.path.dirname(src)) + "/"
+            )
+            self.root_url = self._pending_base.rstrip("/")
+            kwargs["html"] = "<!doctype html><title></title>"
+        else:
+            kwargs["url"] = self._resolve_url(manifest.origin, path + manifest.source)
+
         # ponytail: pywebview has no API for keep-below, stick, or per-window
         # opacity. On macOS we recover them by reaching the NSWindow pywebview
         # created (see _apply_native_macos). skip-taskbar/pager is an app-bundle
         # LSUIElement key (packaging, not runtime) and arbitrary pixmap masks
         # have no macOS analog -> still unsupported, transparency-shape instead.
 
-        url = self._resolve_url(manifest.origin, path + manifest.source)
-        window = webview.create_window(url=url, **kwargs)
+        window = webview.create_window(**kwargs)
         self.window = window
 
         self._apply_native_macos(manifest)
