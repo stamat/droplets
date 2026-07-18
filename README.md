@@ -58,7 +58,7 @@ TO DOs:
 
 [ ] Set StatusIcon for the app and widget manager
 
-[ ] Implement json validator to validate manifest, and settings. (`manifest_schema.json` is a 3-field stub; `Manifest` only checks mandatory keys. Next reasonable step — validate on load/install.)
+[x] Implement json validator to validate manifest — done: `Manifest.validate()` checks mandatory fields, types, enums (`origin`/`type`/`shape`) and `allowed_methods` against `manifest_pattern` (the single source of truth), and runs on every load. Removed the redundant `manifest_schema.json` stub. Field reference: `DROPLETS.md`. Settings validation is pending the settings/manifest split below.
 
 [ ] Separate settings from manifest - example: x and y are settings, width, height and resize are manifest 
 
