@@ -126,11 +126,24 @@ class Droplet:
     def on_moved(self, x, y):
         self.temp["x"], self.temp["y"] = int(x), int(y)
 
+    def on_resized(self, width, height):
+        self.temp["width"], self.temp["height"] = int(width), int(height)
+
     def on_close(self):
-        if self.manifest.x != self.temp["x"] or self.manifest.y != self.temp["y"]:
-            self.manifest.set("x", self.temp["x"])
-            self.manifest.set("y", self.temp["y"])
-            self.manifest.dump_manifest(self.manifest.path)
+        """Persist runtime state (position, resized size) to settings.json.
+
+        ponytail: no 'screen' here -- pywebview has no cross-platform screen-index
+        API, so the GTK backend's screen-remember has no equivalent. x/y/size only.
+        """
+        m = self.manifest
+        changed = {}
+        if m.x != self.temp["x"] or m.y != self.temp["y"]:
+            changed["x"], changed["y"] = self.temp["x"], self.temp["y"]
+        if m.resizable and "width" in self.temp:
+            if (self.temp["width"], self.temp["height"]) != (m.width, m.height):
+                changed["width"], changed["height"] = self.temp["width"], self.temp["height"]
+        if changed:
+            m.save_setting(**changed)
 
     # ---- window setup ---------------------------------------------------
 
@@ -185,6 +198,8 @@ class Droplet:
         # events.moved / closing exist in pywebview 3.4+; guard for older builds.
         if hasattr(window.events, "moved"):
             window.events.moved += self.on_moved
+        if hasattr(window.events, "resized"):
+            window.events.resized += self.on_resized
         if hasattr(window.events, "closing"):
             window.events.closing += self.on_close
 

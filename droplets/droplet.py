@@ -126,10 +126,25 @@ class Droplet:
         self.temp["x"], self.temp["y"] = w.get_position()
 
     def on_focus_out(self, w=None, e=None):
-        if self.manifest.x != self.temp["x"] or self.manifest.y != self.temp["y"]:
-            self.manifest.set("x", self.temp["x"])
-            self.manifest.set("y", self.temp["y"])
-            self.manifest.dump_manifest(self.manifest.path)
+        """Persist runtime state (position, resized size, screen) to settings.json."""
+        m = self.manifest
+        changed = {}
+        if m.x != self.temp["x"] or m.y != self.temp["y"]:
+            changed["x"], changed["y"] = self.temp["x"], self.temp["y"]
+        # Resizable widgets: remember the resized dimensions.
+        if m.resizable and self.window is not None:
+            width, height = self.window.get_size()
+            if (width, height) != (m.width, m.height):
+                changed["width"], changed["height"] = width, height
+        # Non-stuck widgets: remember which screen they live on.
+        # ponytail: stores the X screen index via get_number(); multi-X-screen
+        # restore (set_screen) is unbuilt — near-extinct setup, add if it bites.
+        if not m.stick and self.window is not None:
+            screen = self.window.get_screen().get_number()
+            if screen != m.screen:
+                changed["screen"] = screen
+        if changed:
+            m.save_setting(**changed)
 
     # ---- JS <-> Python bridge -------------------------------------------
 
