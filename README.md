@@ -64,15 +64,15 @@ TO DOs:
 
 [x] Implement json validator to validate manifest — done: `Manifest.validate()` checks mandatory fields, types, enums (`origin`/`type`/`shape`) and `allowed_methods` against `manifest_pattern` (the single source of truth), and runs on every load. Removed the redundant `manifest_schema.json` stub. Field reference: `DROPLETS.md`. Settings validation is pending the settings/manifest split below.
 
-[ ] Separate settings from manifest - example: x and y are settings, width, height and resize are manifest 
+[x] Separate settings from manifest - done: runtime state (`x`, `y`, `screen`, and resized `width`/`height`) is written to a sibling `settings.json` overlaid on load, so store updates never clobber the authored `manifest.json`. `Manifest.save_setting()` replaces the old `dump_manifest` write; `Manifest.validate_settings()` checks it. See `DROPLETS.md`.
 
 [ ] Complete the menu and enable it with basic functionality like move toggle, stick toggle, above toggle, disable, settings invoke, reload
 
-[ ] If stick is off, remember the widget screen in settings, gtk.Window.set_screen, gtk.Window.get_screen
+[x] If stick is off, remember the widget screen in settings — done: the GTK backend stores `get_screen().get_number()` to `settings.json` on focus-out when the widget isn't stuck. (Multi-X-screen `set_screen` restore is left as a `ponytail:` ceiling — near-extinct setup.)
 
-[ ] If app is resizable store the values in settings
+[x] If app is resizable store the values in settings — done: both backends persist the resized `width`/`height` to `settings.json` (GTK on focus-out, pywebview on the `resized` event) only when `resizable` is set.
 
-[ ] Define a settings file
+[x] Define a settings file — done: `settings.json`, a sibling of `manifest.json`, holds runtime keys (`x`, `y`, `screen`, `width`, `height`) and is validated by `Manifest.validate_settings()`. Format documented in `DROPLETS.md`.
 
 [ ] Build droplet process manager, and settings manager
 

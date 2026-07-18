@@ -138,20 +138,24 @@ allowed (passed through untouched).
 ## Runtime settings (vs. manifest)
 
 The manifest is what the **author** ships and shouldn't change under the user.
-A few fields are **runtime state** the app writes back as the user moves/places
-the window:
+Runtime state the app writes back (as the user moves/resizes/places the window)
+lives in a **separate `settings.json`**, a sibling of `manifest.json`, so a store
+update to the shipped manifest never clobbers the user's placement.
 
-| Field | Default | Written when |
-|-------|---------|--------------|
+| Setting | Default | Written when |
+|---------|---------|--------------|
 | `x` | `null` | window moved |
 | `y` | `null` | window moved |
-| `screen` | `0` | window placed on a screen |
+| `screen` | `0` | window placed on a screen (GTK backend, when not stuck) |
+| `width` | `300` | window resized (only when `resizable` is `true`) |
+| `height` | `300` | window resized (only when `resizable` is `true`) |
 
-Today these are persisted back into `manifest.json` via
-`Manifest.dump_manifest()`. Splitting them into a separate settings file (so a
-store update can't clobber the authored manifest) is a planned change — see the
-"Separate settings from manifest" TODO in [`README.md`](README.md). Treat
-`x`/`y`/`screen` as settings, everything else as authored manifest.
+On load, `settings.json` is overlaid on top of the authored manifest — so a
+stored `width` overrides the manifest default, `x`/`y` restore the last position,
+etc. `Manifest.save_setting()` writes it; `Manifest.validate_settings()` rejects
+any key outside the table above or with the wrong type. You never author
+`settings.json` by hand — the runtime creates and maintains it. Everything else
+in `manifest.json` is authored and read-only at runtime.
 
 ---
 
