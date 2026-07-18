@@ -48,17 +48,17 @@ Notes
 
 TO DOs:
 -------
-[ ] Window shape mask from the image gtk.gdk.pixbuf_new_from_file(filename) ? then convert Pixbuf to Pixmap. The Pixmap inherits gtk.gdk.Drawable thus something like this might work gtk.gdk.Drawable.draw_pixbuf, and pixpuf has gtk.gdk.pixbuf_new_from_file
+[x] Window shape mask from the image — done: `reshapemask()` in `droplets/droplet.py` loads the PNG with `GdkPixbuf`, makes a cairo surface, and clips via `shape_combine_region` (X11 SHAPE). GTK/X11 only.
 
-[ ] Make an JavaScript API maybe...? Embed javascript from file with send and recieve functionality...
+[x] Make a JavaScript API — done: the `droplets.send`/`droplets.recieve` bridge is injected as a user script in both backends (`_BRIDGE_SHIM`).
 
-[ ] A way to name the python process? Risk the portability for that? http://code.google.com/p/procname/ Is it worth it?
+[ ] A way to name the python process? (`procname` link is dead; use `setproctitle` if ever wanted.) Low priority.
 
 [ ] Whenever a droplet is started it invokes the interwidget communicaton system.
 
 [ ] Set StatusIcon for the app and widget manager
 
-[ ] Implement json validator to validate manifest, and settings.
+[ ] Implement json validator to validate manifest, and settings. (`manifest_schema.json` is a 3-field stub; `Manifest` only checks mandatory keys. Next reasonable step — validate on load/install.)
 
 [ ] Separate settings from manifest - example: x and y are settings, width, height and resize are manifest 
 
@@ -74,7 +74,7 @@ TO DOs:
 
 [ ] Disable webkit to resize gtk.Window
 
-[ ] Comment the goddamn code!!! >:/
+[x] Comment the goddamn code!!! >:/ — done in the PyGObject/WebKit2 port; both backends are commented.
 
 [ ] Include some kick ass bootstrap and the ability to theme it
 
