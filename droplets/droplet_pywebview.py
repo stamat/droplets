@@ -11,13 +11,17 @@ care which one runs:
 
 What pywebview can't do that GTK can (see PR review): arbitrary pixmap window
 masks (`reshapemask`) have no equivalent — you get frameless + transparent
-"technique B" shaping (rounded/circle/PNG-alpha via CSS) only. Some WM hints
-(keep-below, skip-taskbar/pager, stick, per-window opacity) also have no
-pywebview API and are dropped; they're marked below.
+"technique B" shaping (rounded/circle/PNG-alpha via CSS) only.
+
+Some WM hints have no cross-platform pywebview API (keep-below, stick,
+per-window opacity). On macOS they're recovered natively via the NSWindow
+pywebview hands us (see `_apply_native_macos`); on Windows they stay dropped.
+skip-taskbar/pager is an app-bundle setting (LSUIElement), not a runtime call.
 """
 
 import json
 import os
+import sys
 import urllib.request
 
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
@@ -135,14 +139,17 @@ class Droplet:
         if manifest.x is not None and manifest.y is not None:
             kwargs["x"], kwargs["y"] = manifest.x, manifest.y
 
-        # ponytail: no pywebview API for keep-below, skip-taskbar/pager, stick,
-        # per-window opacity, or arbitrary shape masks -> silently unsupported.
-        # Add on the day a widget actually needs one (WKWebView can do most via
-        # the pyobjc NSWindow handle if it comes to that).
+        # ponytail: pywebview has no API for keep-below, stick, or per-window
+        # opacity. On macOS we recover them by reaching the NSWindow pywebview
+        # created (see _apply_native_macos). skip-taskbar/pager is an app-bundle
+        # LSUIElement key (packaging, not runtime) and arbitrary pixmap masks
+        # have no macOS analog -> still unsupported, transparency-shape instead.
 
         url = self._resolve_url(manifest.origin, path + manifest.source)
         window = webview.create_window(url=url, **kwargs)
         self.window = window
+
+        self._apply_native_macos(manifest)
 
         window.events.loaded += self._on_loaded
         # events.moved / closing exist in pywebview 3.4+; guard for older builds.
@@ -152,6 +159,32 @@ class Droplet:
             window.events.closing += self.on_close
 
         return window
+
+    def _apply_native_macos(self, manifest):
+        # ponytail: darwin-only. Reach the NSWindow pywebview already created and
+        # set the widget flags pywebview doesn't surface (keep-below, stick,
+        # opacity, keep-above). pyobjc (AppKit/Quartz) ships with pywebview on
+        # macOS, so no new dependency. No-op on every other platform.
+        if sys.platform != "darwin":
+            return
+        ns = getattr(self.window, "native", None)
+        if ns is None:
+            # ponytail: pywebview has moved the Cocoa handle across versions;
+            # if it's not on .native, skip rather than guess. Widget still runs,
+            # just without the native-only flags. Revisit if a version drops it.
+            return
+        from AppKit import NSWindow, NSFloatingWindowLevel  # noqa: F401
+        import Quartz
+
+        if manifest.below:
+            ns.setLevel_(Quartz.CGWindowLevelForKey(Quartz.kCGDesktopWindowLevelKey))
+        elif manifest.above:
+            ns.setLevel_(NSFloatingWindowLevel)
+        if manifest.stick:
+            # canJoinAllSpaces (1<<0) | stationary (1<<4): show on every Space.
+            ns.setCollectionBehavior_((1 << 0) | (1 << 4))
+        if manifest.opacity is not None and manifest.opacity < 1:
+            ns.setAlphaValue_(manifest.opacity)
 
     def _on_loaded(self):
         self.window.evaluate_js(_BRIDGE_SHIM)
