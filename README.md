@@ -117,12 +117,58 @@ and the same `allowed_methods` gate, so widgets run unchanged on either.
 
 Override the auto-pick with `DROPLETS_BACKEND=gtk` or `DROPLETS_BACKEND=pywebview`.
 
-Dependencies
-------------
-gtk backend (Linux): PyGObject (gi) with Gtk 3.0 + WebKit2, and pycairo.
+Linux (gtk backend)
+-------------------
+The default backend. GTK 3 + WebKitGTK + Cairo — the only backend with arbitrary
+pixmap window masks (X11 SHAPE).
 
-pywebview backend (macOS/Windows): `pip install pywebview` (pulls in pyobjc on
-macOS, pythonnet on Windows).
+**Requirements:** Python 3, PyGObject (`gi`) with GTK 3.0 + WebKit2, and pycairo.
+These are system packages, not pip wheels — install them from your distro.
+
+    # Debian / Ubuntu
+    sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+
+    # Fedora
+    sudo dnf install python3-gobject gtk3 webkit2gtk4.1 python3-cairo
+
+**Run a droplet:**
+
+    python3 droplets.py apps/app-test
+
+**Development:** the GTK backend lives entirely in `droplets/droplet.py` — it's
+the only file that imports `gi`. On a Wayland session the X11 SHAPE mask
+(`reshapemask`) is a no-op; force `GDK_BACKEND=x11` to route through XWayland and
+keep it working:
+
+    GDK_BACKEND=x11 python3 droplets.py apps/your-widget
+
+macOS (pywebview backend)
+-------------------------
+Lets you develop and run droplets on a Mac without a Linux VM. Uses the native
+WKWebView. Selected automatically off Linux; no arbitrary mask API (frameless +
+transparent shaping only), but keep-below/stick/opacity are recovered natively
+through the underlying `NSWindow` (see `droplet_pywebview.py`).
+
+**Requirements:** Python 3 and pywebview:
+
+    pip install pywebview
+
+pywebview pulls in **pyobjc** (AppKit/Quartz) on macOS automatically — that's
+what the native window flags use, no extra install.
+
+**Run a droplet:**
+
+    python3 droplets.py apps/app-test
+
+**Development:** the macOS backend lives entirely in
+`droplets/droplet_pywebview.py`. `backend.py` auto-picks it off Linux; force it
+anywhere with `DROPLETS_BACKEND=pywebview`. `app-test` is decorated + hosted, so
+it won't exercise transparency/shaping — spin up a `transparent: true`,
+`decorated: false` widget to test the shaping and native-flag paths.
+
+_(Windows also uses the pywebview backend — `pip install pywebview` pulls in
+pythonnet + WebView2. Transparency is weaker there; the native-flag recovery
+above is macOS-only.)_
 
 Literature
 ----------
