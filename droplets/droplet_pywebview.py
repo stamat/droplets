@@ -83,6 +83,46 @@ def _rect_on_screen(x, y, width, height, screens):
     )
 
 
+def _layout_key(screens):
+    """Fingerprint the current monitor arrangement, e.g.
+
+        "1512x982+0+0|2560x1440-2560+0"
+
+    Geometry is stored per fingerprint, so undocking and redocking each restore
+    the position that belonged to that arrangement. Sorted, so the same displays
+    enumerated in a different order stay one layout.
+
+    ponytail: size+origin only, no display serial/EDID -- pywebview's Screen
+    doesn't expose one. Two identical monitors swapped between ports read as the
+    same layout; the widget lands on the other one. Upgrade path is a native
+    per-platform display id if that ever bites.
+    """
+    return "|".join(
+        sorted("%dx%d%+d%+d" % (s.width, s.height, s.x, s.y) for s in screens)
+    )
+
+
+def _screen_for(x, y, screens):
+    """The screen a saved (x, y) belongs to, or the primary if none claims it.
+
+    Saved coordinates follow what pywebview's `moved` event emits on macOS
+    (cocoa.py windowDidMove_): x is global, y is measured downward from the top
+    edge of the screen the window was on -- so y lands in [0, that screen's
+    height) and x inside its x-range.
+    """
+    for screen in screens:
+        if screen.x <= x < screen.x + screen.width and 0 <= y < screen.height:
+            return screen
+    return screens[0]  # NSScreen.screens()[0] is the primary
+
+
+def _top_left_point(x, y, screens):
+    """Saved (x, y) -> the window's top-left corner in global Cocoa coordinates,
+    which are y-up from the bottom of the primary screen."""
+    screen = _screen_for(x, y, screens)
+    return x, screen.y + screen.height - y
+
+
 class _Api:
     """The single method pywebview exposes to JS. Everything funnels through
     `send` (a JSON `{method, args}` packet), so no widget module function is
@@ -188,14 +228,18 @@ class Droplet:
         API, so the GTK backend's screen-remember has no equivalent. x/y/size only.
         """
         m = self.manifest
+        # Compare against what this layout already holds, falling back to the
+        # manifest for a layout seen for the first time.
+        saved = m.layout(self.layout_key)
         changed = {}
-        if m.x != self.temp["x"] or m.y != self.temp["y"]:
+        if (saved.get("x", m.x), saved.get("y", m.y)) != (self.temp["x"], self.temp["y"]):
             changed["x"], changed["y"] = self.temp["x"], self.temp["y"]
         if m.resizable and "width" in self.temp:
-            if (self.temp["width"], self.temp["height"]) != (m.width, m.height):
-                changed["width"], changed["height"] = self.temp["width"], self.temp["height"]
+            size = (self.temp["width"], self.temp["height"])
+            if (saved.get("width", m.width), saved.get("height", m.height)) != size:
+                changed["width"], changed["height"] = size
         if changed:
-            m.save_setting(**changed)
+            m.save_layout(self.layout_key, **changed)
 
     # ---- window setup ---------------------------------------------------
 
@@ -203,10 +247,20 @@ class Droplet:
         self.manifest = manifest
         self.module = module
 
+        # Geometry saved for this exact monitor arrangement wins; a layout with no
+        # entry yet (first run, or displays just rearranged) falls back to the
+        # manifest, which already carries settings.json's top-level x/y/size.
+        self.layout_key = _layout_key(webview.screens)
+        saved = manifest.layout(self.layout_key)
+        x = saved.get("x", manifest.x)
+        y = saved.get("y", manifest.y)
+        width = saved.get("width", manifest.width) if manifest.resizable else manifest.width
+        height = saved.get("height", manifest.height) if manifest.resizable else manifest.height
+
         kwargs = dict(
             title=manifest.title or "",
-            width=manifest.width,
-            height=manifest.height,
+            width=width,
+            height=height,
             resizable=manifest.resizable,
             frameless=not manifest.decorated,
             easy_drag=manifest.drag,
@@ -225,13 +279,12 @@ class Droplet:
         # otherwise the widget restores somewhere invisible.
         self._pending_move = None
         if (
-            manifest.x is not None
-            and manifest.y is not None
-            and _rect_on_screen(
-                manifest.x, manifest.y, manifest.width, manifest.height, webview.screens
-            )
+            x is not None
+            and y is not None
+            and _rect_on_screen(x, y, width, height, webview.screens)
         ):
-            self._pending_move = (manifest.x, manifest.y)
+            self._pending_move = (x, y)
+            self.temp["x"], self.temp["y"] = x, y
 
         # Local tier: served over loopback (droplets/server.py) rather than read
         # off disk, which is what lets the CSP be a real response header and what
@@ -310,7 +363,36 @@ class Droplet:
             ns.setAlphaValue_(manifest.opacity)
 
     def _restore_position(self):
-        self.window.move(*self._pending_move)
+        """Put the window back where it was, in the coordinates it was saved in.
+
+        window.move() can't be used on macOS: pywebview reports moves in global
+        coordinates (cocoa.py windowDidMove_ sends frame.origin.x straight
+        through) but interprets move() relative to `self.screen`, which it fixed
+        at window creation to NSScreen.mainScreen() -- the screen holding the key
+        window at that moment, not the primary. Feed a global x back to move()
+        and it adds that screen's origin a second time, so a widget saved on the
+        primary reappears on whatever screen sits left of it, at the same offset.
+        Setting the frame ourselves keeps both ends in one coordinate system.
+        """
+        x, y = self._pending_move
+        if sys.platform != "darwin":
+            self.window.move(x, y)
+            return
+
+        from AppKit import NSPoint, NSThread
+        from PyObjCTools import AppHelper
+
+        # pywebview fires `shown` on a worker thread (event.py spawns one per
+        # handler); AppKit setters are main-thread only.
+        if not NSThread.isMainThread():
+            AppHelper.callAfter(self._restore_position)
+            return
+
+        ns = getattr(self.window, "native", None)
+        if ns is None:
+            self.window.move(x, y)  # same fallback as _apply_native_macos
+            return
+        ns.setFrameTopLeftPoint_(NSPoint(*_top_left_point(x, y, webview.screens)))
 
     @staticmethod
     def _resolve_url(origin, source):

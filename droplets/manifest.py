@@ -25,8 +25,12 @@ _ENUMS = {
 # Runtime state a running droplet writes back (window moved/resized, which
 # screen it lives on). These live in a sibling settings.json, NOT the authored
 # manifest.json, so store updates never clobber the user's placement. Every key
-# is also in manifest_pattern, so its type is validated against that default.
-_SETTINGS_KEYS = ("x", "y", "screen", "width", "height")
+# is also in manifest_pattern, so its type is validated against that default --
+# except 'layouts', which is settings-only (see layout()/save_layout()).
+_SETTINGS_KEYS = ("x", "y", "screen", "width", "height", "layouts")
+
+# Geometry keys remembered per display layout inside 'layouts'.
+_LAYOUT_KEYS = ("x", "y", "width", "height")
 
 
 def _type_ok(value, default):
@@ -89,6 +93,27 @@ class Manifest:
         with open(self.settings_path, "w") as sfile:
             json.dump(self.settings, sfile, indent=4)
 
+    def layout(self, key):
+        """Geometry remembered for one display layout, or {} if that layout is new.
+
+        Positions are stored per monitor arrangement (see _layout_key in the
+        pywebview backend): a widget dragged to a spot on the external display
+        keeps that spot when you redock, and keeps its laptop-only spot when you
+        undock, instead of the two fighting over one x/y.
+        """
+        return self.settings.get("layouts", {}).get(key, {})
+
+    def save_layout(self, key, **values):
+        """Persist geometry for one display layout.
+
+        Also mirrors it to the top-level keys: that's what a settings.json
+        written before layouts existed looks like, and what the loader falls back
+        to when the current arrangement has no entry yet.
+        """
+        layouts = dict(self.settings.get("layouts", {}))
+        layouts[key] = dict(layouts.get(key, {}), **values)
+        self.save_setting(layouts=layouts, **values)
+
     def set(self, key, value):
         setattr(self, key, value)
         self.dict[key] = value
@@ -137,6 +162,8 @@ class Manifest:
                 errors.append(
                     "unknown setting %r (allowed: %s)" % (key, ", ".join(_SETTINGS_KEYS))
                 )
+            elif key == "layouts":
+                errors.extend(self._layout_errors(value))
             elif not _type_ok(value, self.defaults.get(key)):
                 errors.append(
                     "%r has wrong type: expected %s, got %s"
@@ -146,6 +173,34 @@ class Manifest:
             raise ValueError(
                 "Invalid settings %s:\n  - %s" % (self.settings_path, "\n  - ".join(errors))
             )
+
+    def _layout_errors(self, layouts):
+        """'layouts' is {layout key: geometry}; geometry holds x/y/width/height ints.
+
+        Validated one level deeper than the flat settings because a bad entry here
+        is silent -- the widget just opens somewhere wrong -- rather than loud.
+        """
+        if not isinstance(layouts, dict):
+            return ["'layouts' must be an object, got %s" % type(layouts).__name__]
+        errors = []
+        for key, geometry in layouts.items():
+            if not isinstance(geometry, dict):
+                errors.append(
+                    "layout %r must be an object, got %s" % (key, type(geometry).__name__)
+                )
+                continue
+            for field, value in geometry.items():
+                if field not in _LAYOUT_KEYS:
+                    errors.append(
+                        "layout %r has unknown key %r (allowed: %s)"
+                        % (key, field, ", ".join(_LAYOUT_KEYS))
+                    )
+                elif not isinstance(value, int) or isinstance(value, bool):
+                    errors.append(
+                        "layout %r: %r must be an int, got %s"
+                        % (key, field, type(value).__name__)
+                    )
+        return errors
 
     def apply_values(self, manifest):
         for key, value in manifest.items():

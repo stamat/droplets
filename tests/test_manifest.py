@@ -141,6 +141,43 @@ def test_bad_settings_rejected():
             raise AssertionError("expected ValueError for unknown setting key")
 
 
+def test_save_layout_writes_per_layout_and_top_level():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {"width": 300, "height": 300})
+        m = Manifest(os.path.join(d, "manifest.json"))
+        m.save_layout("1512x982+0+0", x=5, y=6)
+        m.save_layout("1512x982+0+0|2560x1440-2560+0", x=-1393, y=75)
+        with open(os.path.join(d, "settings.json")) as f:
+            saved = json.load(f)
+        assert saved["layouts"] == {
+            "1512x982+0+0": {"x": 5, "y": 6},
+            "1512x982+0+0|2560x1440-2560+0": {"x": -1393, "y": 75},
+        }
+        # top level mirrors the last write, so a pre-layouts reader still restores
+        assert (saved["x"], saved["y"]) == (-1393, 75)
+        assert m.layout("1512x982+0+0") == {"x": 5, "y": 6}
+        assert m.layout("nonexistent") == {}
+
+
+def test_bad_layouts_rejected():
+    bad = [
+        {"layouts": []},
+        {"layouts": {"1512x982+0+0": 5}},
+        {"layouts": {"1512x982+0+0": {"opacity": 1}}},
+        {"layouts": {"1512x982+0+0": {"x": "5"}}},
+    ]
+    for settings in bad:
+        with tempfile.TemporaryDirectory() as d:
+            _write(d, "manifest.json", {"width": 1, "height": 1})
+            _write(d, "settings.json", settings)
+            try:
+                Manifest(os.path.join(d, "manifest.json"))
+            except ValueError as e:
+                assert "layout" in str(e)
+            else:
+                raise AssertionError("expected ValueError for %r" % settings)
+
+
 def test_shipped_manifests_are_valid():
     # Every manifest in the repo must pass validation.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -163,5 +200,7 @@ if __name__ == "__main__":
     test_settings_overlay_overrides_manifest()
     test_save_setting_writes_only_settings_file()
     test_bad_settings_rejected()
+    test_save_layout_writes_per_layout_and_top_level()
+    test_bad_layouts_rejected()
     test_shipped_manifests_are_valid()
     print("ok")

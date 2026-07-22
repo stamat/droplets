@@ -183,11 +183,15 @@ update to the shipped manifest never clobbers the user's placement.
 
 | Setting | Default | Written when |
 |---------|---------|--------------|
-| `x` | `null` | window moved |
-| `y` | `null` | window moved |
+| `x` | `null` | window stops moving (last known, any layout) |
+| `y` | `null` | window stops moving (last known, any layout) |
 | `screen` | `0` | window placed on a screen (GTK backend, when not stuck) |
 | `width` | `300` | window resized (only when `resizable` is `true`) |
 | `height` | `300` | window resized (only when `resizable` is `true`) |
+| `layouts` | `{}` | same as above, kept per monitor arrangement (pywebview backend) |
+
+Moves and resizes are debounced (`_SETTLE_DELAY`, 0.5s of stillness) so one drag
+costs one write, at the end of the drag rather than at close.
 
 On load, `settings.json` is overlaid on top of the authored manifest — so a
 stored `width` overrides the manifest default, `x`/`y` restore the last position,
@@ -195,6 +199,38 @@ etc. `Manifest.save_setting()` writes it; `Manifest.validate_settings()` rejects
 any key outside the table above or with the wrong type. You never author
 `settings.json` by hand — the runtime creates and maintains it. Everything else
 in `manifest.json` is authored and read-only at runtime.
+
+### Multiple monitors
+
+One `x`/`y` can't describe a widget that lives top-right on the laptop screen and
+mid-left on the 4K when docked. So geometry is *also* stored per monitor
+arrangement, under `layouts`, keyed by a fingerprint of the attached displays
+(`WxH+X+Y` per screen, sorted, joined with `|`):
+
+```json
+{
+    "x": 2021,
+    "y": 69,
+    "layouts": {
+        "1512x982+0+0": { "x": 1300, "y": 40 },
+        "1512x982+0+0|2560x1440-2560+0": { "x": 2021, "y": 69 }
+    }
+}
+```
+
+`Manifest.layout(key)` reads an entry, `Manifest.save_layout(key, **geometry)`
+writes one; `_layout_key()` in the pywebview backend builds the fingerprint from
+`webview.screens`. Resolution order at startup:
+
+1. `layouts[current fingerprint]` — the position this exact arrangement had.
+2. Top-level `x`/`y` — last known anywhere, also what pre-`layouts` settings
+   files and the GTK backend hold.
+3. The manifest's authored position.
+
+Whichever wins is still dropped if it lands on no attached display
+(`_rect_on_screen`), so a widget never restores off in the void. `save_layout`
+mirrors to the top-level keys as it writes, so downgrading loses the per-layout
+memory but not the last position.
 
 ---
 
