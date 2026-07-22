@@ -252,7 +252,9 @@ class Droplet:
         window = webview.create_window(**kwargs)
         self.window = window
 
-        self._apply_native_macos(manifest)
+        # The NSWindow only exists once webview.start() runs -- window.native is
+        # still None here -- so the native-only flags go on the `shown` event.
+        window.events.shown += self._apply_native_macos
 
         if self._pending_move is not None:
             window.events.shown += self._restore_position
@@ -266,24 +268,37 @@ class Droplet:
 
         return window
 
-    def _apply_native_macos(self, manifest):
+    def _apply_native_macos(self):
         # ponytail: darwin-only. Reach the NSWindow pywebview already created and
         # set the widget flags pywebview doesn't surface (keep-below, stick,
         # opacity, keep-above). pyobjc (AppKit/Quartz) ships with pywebview on
         # macOS, so no new dependency. No-op on every other platform.
         if sys.platform != "darwin":
             return
+        from AppKit import NSThread, NSFloatingWindowLevel, NSNormalWindowLevel
+        from PyObjCTools import AppHelper
+
+        # pywebview fires window events on a worker thread; AppKit setters are
+        # main-thread only, so hop before touching the window.
+        if not NSThread.isMainThread():
+            AppHelper.callAfter(self._apply_native_macos)
+            return
+
         ns = getattr(self.window, "native", None)
         if ns is None:
             # ponytail: pywebview has moved the Cocoa handle across versions;
             # if it's not on .native, skip rather than guess. Widget still runs,
             # just without the native-only flags. Revisit if a version drops it.
             return
-        from AppKit import NSWindow, NSFloatingWindowLevel  # noqa: F401
-        import Quartz
 
+        manifest = self.manifest
         if manifest.below:
-            ns.setLevel_(Quartz.CGWindowLevelForKey(Quartz.kCGDesktopWindowLevelKey))
+            # ponytail: one level under normal, NOT kCGDesktopWindowLevel. At the
+            # true desktop level the window sits beneath Finder's desktop-icon
+            # window, which spans the screen and swallows every click -- drag and
+            # any other mouse input die. -1 keeps the widget behind all app
+            # windows (the point of keep-below) while staying interactive.
+            ns.setLevel_(NSNormalWindowLevel - 1)
         elif manifest.above:
             ns.setLevel_(NSFloatingWindowLevel)
         if manifest.stick:
