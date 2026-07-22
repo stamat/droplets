@@ -14,9 +14,16 @@ remote images and frames are all blocked by the browser before they ever reach
 the bridge. `remote` and `hosted` are, by design, allowed to talk to the web
 (they have no system bridge), so they get no policy.
 
-The policy is delivered as a `<meta http-equiv>` baked into the entry HTML at
-parse time (see `inject`), which is the spec-honoured way -- both WebKitGTK and
-WKWebView enforce a meta CSP present when the document is parsed.
+Two delivery paths, one policy source:
+
+  - GTK reads the widget off disk as file://, so the policy rides in as a
+    `<meta http-equiv>` baked into the entry HTML at parse time (see `inject`).
+    Both engines honour a meta CSP present when the document is parsed.
+  - The pywebview backend serves the widget over loopback (droplets/server.py),
+    so it gets the real `Content-Security-Policy` response header -- strictly
+    better, since a header governs the whole response rather than only what the
+    parser meets after the meta. That document is same-origin with its own
+    directory, so `policy_for(..., served=True)` drops `file:`.
 
 ponytail: `'unsafe-inline'`/`'unsafe-eval'` stay allowed because existing local
 widgets (clock, calculator, ...) use inline scripts; the tier threat is *remote*
@@ -29,35 +36,48 @@ to WebKit content-filters (GTK) / WKContentRuleList (Cocoa) -- same policy sourc
 
 import re
 
-# file:/data:/blob: cover the widget's own tree and inline assets; no remote
-# scheme is listed, so http/https/ws are denied by each directive's fallback.
-_LOCAL_SOURCES = "'self' file: data: blob:"
+def _policy(sources):
+    return "; ".join(
+        [
+            "default-src " + sources,
+            "script-src " + sources + " 'unsafe-inline' 'unsafe-eval'",
+            "style-src " + sources + " 'unsafe-inline'",
+            "img-src " + sources,
+            "font-src " + sources,
+            "media-src " + sources,
+            "connect-src " + sources,
+            "frame-src " + sources,
+            "object-src 'none'",
+        ]
+    )
 
-_LOCAL_POLICY = "; ".join(
-    [
-        "default-src " + _LOCAL_SOURCES,
-        "script-src " + _LOCAL_SOURCES + " 'unsafe-inline' 'unsafe-eval'",
-        "style-src " + _LOCAL_SOURCES + " 'unsafe-inline'",
-        "img-src " + _LOCAL_SOURCES,
-        "font-src " + _LOCAL_SOURCES,
-        "media-src " + _LOCAL_SOURCES,
-        "connect-src " + _LOCAL_SOURCES,
-        "frame-src " + _LOCAL_SOURCES,
-        "object-src 'none'",
-    ]
-)
+
+# A file:// document (GTK backend): file:/data:/blob: cover the widget's own tree
+# and inline assets. No remote scheme is listed, so http/https/ws are denied by
+# each directive's fallback.
+_LOCAL_POLICY = _policy("'self' file: data: blob:")
+
+# A loopback-served document (droplets/server.py): 'self' *is* the widget's own
+# origin, so `file:` is not only unnecessary, it would hand a widget read access
+# to the rest of the disk. Dropped.
+_SERVED_POLICY = _policy("'self' data: blob:")
 
 _HEAD_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
 _HTML_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 
 
-def policy_for(origin):
+def policy_for(origin, served=False):
     """CSP string for a tier, or None when the tier gets no policy.
 
     Only `local` is restricted (it has the system bridge). `remote`/`hosted`
     are meant to reach the web and have no bridge, so they're unrestricted.
+
+    `served` picks the policy for a document delivered over the local HTTP
+    server rather than read off disk as file://.
     """
-    return _LOCAL_POLICY if origin == "local" else None
+    if origin != "local":
+        return None
+    return _SERVED_POLICY if served else _LOCAL_POLICY
 
 
 def meta_tag(origin):

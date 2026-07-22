@@ -11,8 +11,9 @@ care which one runs:
     pywebview exposes no user-script API, and those tiers have no bridge
     (`recieve` drops their messages), so nothing is lost.
   - same `allowed_methods` gate on module calls (the hybrid-tier allowlist)
-  - same per-tier CSP: local widgets get the CSP meta baked in (droplets/csp.py)
-    so remote subresources are blocked at parse time
+  - same per-tier CSP (droplets/csp.py) so remote subresources are blocked --
+    delivered here as a real response header, because local widgets are served
+    over loopback (droplets/server.py) rather than read off disk
 
 What pywebview can't do that GTK can (see PR review): arbitrary pixmap window
 masks (`reshapemask`) have no equivalent — you get frameless + transparent
@@ -31,7 +32,7 @@ import urllib.request
 
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
 
-from . import csp
+from . import server
 from .backend import debug_enabled
 from .manifest import Manifest
 from .utils import import_from_uri
@@ -61,11 +62,6 @@ _BRIDGE_SHIM = (
     "});"
 )
 _BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + "</script>"
-
-# Generated entry document, written beside the authored one (see prepare_widget)
-# and removed on close. Dot-prefixed so it stays out of the way of the widget's
-# own files.
-_ENTRY_NAME = ".droplets-entry.html"
 
 
 def _rect_on_screen(x, y, width, height, screens):
@@ -101,8 +97,6 @@ class Droplet:
         self.path = None
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
-        # Local tier: path of the generated entry doc, removed on close.
-        self._entry_file = None
 
         self.init_widget(path, custom_manifest)
         # debug=True turns on developer extras -> right-click "Inspect Element".
@@ -173,13 +167,6 @@ class Droplet:
                 changed["width"], changed["height"] = self.temp["width"], self.temp["height"]
         if changed:
             m.save_setting(**changed)
-        if self._entry_file:
-            # ponytail: best effort. A killed process leaves the file behind; the
-            # next run overwrites it, so no staleness to handle.
-            try:
-                os.remove(self._entry_file)
-            except OSError:
-                pass
 
     # ---- window setup ---------------------------------------------------
 
@@ -217,29 +204,15 @@ class Droplet:
         ):
             self._pending_move = (manifest.x, manifest.y)
 
-        # Local tier: enforce the per-tier CSP (see droplets/csp.py) by baking the
-        # meta (and the bridge shim) into a generated entry doc, written next to
-        # the authored one and loaded by URL.
-        #
-        # It has to be a real file in the widget's own directory. load_html() maps
-        # to WKWebView's loadHTMLString:baseURL:, which grants the document *no*
-        # read access to that base directory -- every sibling asset (the clock's
-        # background PNG, stylesheets, images) silently fails to load. A file://
-        # URL load has the access; a generated sibling is the only way to get both
-        # that and a CSP the browser sees at parse time.
+        # Local tier: served over loopback (droplets/server.py) rather than read
+        # off disk, which is what lets the CSP be a real response header and what
+        # gives the widget access to its own assets -- a file:// document created
+        # by load_html() has neither. The shim rides along in the same response.
         if manifest.origin == "local":
-            src = os.path.abspath(path + manifest.source)
-            with open(src, "r", encoding="utf-8") as f:
-                # Shim first, CSP second: inject_head puts each tag at the top of
-                # <head>, so the meta ends up ahead of the shim script it governs.
-                html = csp.inject_head(f.read(), _BRIDGE_SHIM_TAG)
-                html = csp.inject(html, manifest.origin)
-            entry = os.path.join(os.path.dirname(src), _ENTRY_NAME)
-            with open(entry, "w", encoding="utf-8") as f:
-                f.write(html)
-            self._entry_file = entry
-            self.root_url = "file://" + urllib.request.pathname2url(os.path.dirname(src))
-            kwargs["url"] = self.root_url + "/" + _ENTRY_NAME
+            self.root_url = server.serve(
+                os.path.abspath(path), manifest.source, manifest.origin, _BRIDGE_SHIM_TAG
+            )
+            kwargs["url"] = self.root_url
         else:
             kwargs["url"] = self._resolve_url(manifest.origin, path + manifest.source)
 

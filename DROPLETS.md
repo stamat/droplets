@@ -88,9 +88,12 @@ Two things that look like bugs but aren't:
 - Errors thrown by the widget go to the inspector console, not the terminal.
   A blank widget with a clean terminal usually means a JS error on the first
   line — open the console.
-- On macOS the entry document is a generated `.droplets-entry.html` sibling
-  (the authored HTML plus the CSP meta and the bridge shim), so that is the
-  filename you'll see in the inspector. Edit the authored file, not that one.
+- Outside Linux a `local` droplet is served from `http://127.0.0.1:<port>/<random>/`,
+  not opened as a `file://` path — that is what lets its CSP arrive as a real
+  response header and what gives it access to its own assets. The port is stable
+  per widget directory; the path segment is new every launch and is not
+  guessable, so nothing else on the machine can read the widget over that port.
+  You are still editing your own files; nothing is generated or copied.
 
 ---
 
