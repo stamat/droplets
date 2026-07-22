@@ -121,6 +121,14 @@ and the same `allowed_methods` gate, so widgets run unchanged on either.
 
 Override the auto-pick with `DROPLETS_BACKEND=gtk` or `DROPLETS_BACKEND=pywebview`.
 
+**Running** differs by backend because the deps come from different places:
+
+* **macOS / Windows (pywebview):** `uv sync` once, then `uv run droplets.py <dir>`
+  — deps resolve from `pyproject.toml`/`uv.lock`, no manual venv. (See the macOS
+  section below.)
+* **Linux (gtk):** run with `python3 droplets.py <dir>` — GTK/WebKit come from
+  **system** packages `uv` doesn't manage, so use the distro install below, not `uv`.
+
 Linux (gtk backend)
 -------------------
 The default backend. GTK 3 + WebKitGTK + Cairo — the only backend with arbitrary

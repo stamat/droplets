@@ -50,8 +50,13 @@ myclock/
 Run it:
 
 ```sh
-python3 droplets.py apps/myclock      # or any path to the directory
+uv run droplets.py apps/myclock       # or any path to the directory
 ```
+
+`uv run` pulls the deps from `uv.lock` — no manual venv. That's the
+macOS/Windows (pywebview) path. On **Linux/GTK** the webview comes from system
+packages `uv` can't see, so run it with `python3 droplets.py apps/myclock`
+instead — see [`README.md`](README.md) for the distro packages.
 
 Add a Python backend only if the widget needs the system — see
 [cmd access](#cmd-access-granulation). Pure web widgets skip `main.py` entirely.
@@ -63,7 +68,7 @@ Add a Python backend only if the widget needs the system — see
 A droplet is a web page, so use the browser's own inspector:
 
 ```sh
-DROPLETS_DEBUG=1 python3 droplets.py apps/myclock
+DROPLETS_DEBUG=1 uv run droplets.py apps/myclock   # Linux/GTK: python3 droplets.py …
 ```
 
 Full DOM tree, console, network, JS breakpoints — `console.log` from your widget
@@ -336,13 +341,20 @@ running is read from the process table, so a droplet closed from its own context
 menu shows as off — and that manual close also drops it from the autostart list,
 so it is not brought back next launch.
 
+Run the manager like any droplet — point the runner at its directory:
+
+```sh
+uv run droplets.py system/manager        # macOS / Windows (pywebview)
+python3 droplets.py system/manager       # Linux (gtk) — system gi, not uv
+```
+
 The set of droplets to autostart is a list the manager owns
 (`system/manager/enabled.json`), **not** a flag in each droplet's file — a
 droplet cannot enable itself. On launch the manager restarts everything on that
-list; the same list drives a login item:
+list; the same list drives a login item (same mac/linux split):
 
 ```sh
-python3 system/manager/main.py --autostart
+uv run system/manager/main.py --autostart          # Linux/GTK: python3 system/manager/main.py …
 ```
 
 ---
