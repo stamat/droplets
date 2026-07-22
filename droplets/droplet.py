@@ -21,6 +21,7 @@ except ValueError:  # older distros ship the libsoup2 build
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, GdkPixbuf, Gtk, WebKit2  # noqa: E402
 
+from . import csp  # noqa: E402
 from .manifest import Manifest  # noqa: E402
 
 # JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
@@ -125,10 +126,25 @@ class Droplet:
         self.temp["x"], self.temp["y"] = w.get_position()
 
     def on_focus_out(self, w=None, e=None):
-        if self.manifest.x != self.temp["x"] or self.manifest.y != self.temp["y"]:
-            self.manifest.set("x", self.temp["x"])
-            self.manifest.set("y", self.temp["y"])
-            self.manifest.dump_manifest(self.manifest.path)
+        """Persist runtime state (position, resized size, screen) to settings.json."""
+        m = self.manifest
+        changed = {}
+        if m.x != self.temp["x"] or m.y != self.temp["y"]:
+            changed["x"], changed["y"] = self.temp["x"], self.temp["y"]
+        # Resizable widgets: remember the resized dimensions.
+        if m.resizable and self.window is not None:
+            width, height = self.window.get_size()
+            if (width, height) != (m.width, m.height):
+                changed["width"], changed["height"] = width, height
+        # Non-stuck widgets: remember which screen they live on.
+        # ponytail: stores the X screen index via get_number(); multi-X-screen
+        # restore (set_screen) is unbuilt — near-extinct setup, add if it bites.
+        if not m.stick and self.window is not None:
+            screen = self.window.get_screen().get_number()
+            if screen != m.screen:
+                changed["screen"] = screen
+        if changed:
+            m.save_setting(**changed)
 
     # ---- JS <-> Python bridge -------------------------------------------
 
@@ -143,6 +159,12 @@ class Droplet:
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
         else:
+            # Optional allowlist: when manifest.allowed_methods is set, only those
+            # module functions are callable from JS (the hybrid-tier gate). Absent
+            # (null) keeps the legacy behaviour of exposing every module function.
+            allowed = getattr(self.manifest, "allowed_methods", None)
+            if allowed is not None and packet["method"] not in allowed:
+                return
             fn = getattr(self.module, packet["method"], None)
             args = packet.get("args", {})
             if "gtk" in args:
@@ -156,7 +178,9 @@ class Droplet:
             self.send(result)
 
     def send(self, msg):
-        self._run_js('droplets.recieve("%s");' % msg)
+        # json.dumps yields a safe JS literal; raw %-interpolation broke (or let
+        # a widget inject) on any payload containing quotes/newlines/</script>.
+        self._run_js("droplets.recieve(%s);" % json.dumps(msg))
 
     def _run_js(self, script):
         self.browser.run_javascript(script, None, None, None)
@@ -347,9 +371,11 @@ class Droplet:
         # Navigation / response policy (replaces WebKit1 *-policy-decision-requested).
         browser.connect("decide-policy", self._on_decide_policy)
 
-        # ponytail: WebKit1's per-subresource ban (banRemoteRequests) needs a
-        # WebKit2 web-process extension to reimplement; decide-policy below still
-        # blocks top-level/frame navigation off file:// for local origins.
+        # Subresource isolation (WebKit1's banRemoteRequests) is now handled by
+        # the per-tier CSP baked into local documents (see load_widget +
+        # droplets/csp.py): remote script/fetch/img/frame are blocked at parse
+        # time. decide-policy below still blocks top-level/frame *navigation* off
+        # file:// for local origins as a second layer.
 
         child = browser
         if manifest.type == "app":
@@ -425,10 +451,26 @@ class Droplet:
     # ---- loading --------------------------------------------------------
 
     def load_widget(self, browser, origin, source):
-        if origin != "hosted":
-            file = os.path.abspath(source)
-            source = "file://" + urllib.request.pathname2url(file)
-        browser.load_uri(source)
+        if origin == "hosted":
+            browser.load_uri(source)
+            return
+        file = os.path.abspath(source)
+        if origin == "local":
+            # Enforce the local tier: bake the per-tier CSP into the entry
+            # document and load it via load_html against its own directory as
+            # base_uri. The file:// base keeps the widget's origin + relative
+            # resources working, while the parse-time meta CSP blocks every
+            # remote subresource (script/fetch/img/frame) -- the isolation the
+            # README promises. Without this a local widget could pull a remote
+            # <script> and reach the Python bridge (RCE). See droplets/csp.py.
+            base = "file://" + urllib.request.pathname2url(os.path.dirname(file)) + "/"
+            with open(file, "r", encoding="utf-8") as f:
+                html = csp.inject(f.read(), origin)
+            self.root_url = base.rstrip("/")
+            browser.load_html(html, base)
+            return
+        # remote: local files, but the web is allowed (no bridge) -> no CSP.
+        browser.load_uri("file://" + urllib.request.pathname2url(file))
 
     def init_widget(self, path, custom_manifest=None):
         if not path.endswith("/"):

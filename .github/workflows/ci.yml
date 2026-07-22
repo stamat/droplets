@@ -19,3 +19,5 @@ jobs:
         run: python -m compileall -q apps droplets system droplets.py
       - name: Run headless manifest tests
         run: python tests/test_manifest.py
+      - name: Run headless backend-selection tests
+        run: python tests/test_backend.py

@@ -16,6 +16,10 @@ Security model is very simple:
 
 Or if you haven’t heard about Chrome apps, it is like PhoneGap for the Linux desktop combined with Dashboard Widgets, or Windows Gadgets but more secure.
 
+**Writing a droplet?** See [`DROPLETS.md`](DROPLETS.md) — quick start, every
+manifest field, runtime settings, and how to granulate what JavaScript may call
+in Python (`allowed_methods`).
+
 
 Notes
 -----
@@ -48,33 +52,33 @@ Notes
 
 TO DOs:
 -------
-[ ] Window shape mask from the image gtk.gdk.pixbuf_new_from_file(filename) ? then convert Pixbuf to Pixmap. The Pixmap inherits gtk.gdk.Drawable thus something like this might work gtk.gdk.Drawable.draw_pixbuf, and pixpuf has gtk.gdk.pixbuf_new_from_file
+[x] Window shape mask from the image — done: `reshapemask()` in `droplets/droplet.py` loads the PNG with `GdkPixbuf`, makes a cairo surface, and clips via `shape_combine_region` (X11 SHAPE). GTK/X11 only.
 
-[ ] Make an JavaScript API maybe...? Embed javascript from file with send and recieve functionality...
+[x] Make a JavaScript API — done: the `droplets.send`/`droplets.recieve` bridge is injected as a user script in both backends (`_BRIDGE_SHIM`).
 
-[ ] A way to name the python process? Risk the portability for that? http://code.google.com/p/procname/ Is it worth it?
+[ ] A way to name the python process? (`procname` link is dead; use `setproctitle` if ever wanted.) Low priority.
 
 [ ] Whenever a droplet is started it invokes the interwidget communicaton system.
 
 [ ] Set StatusIcon for the app and widget manager
 
-[ ] Implement json validator to validate manifest, and settings.
+[x] Implement json validator to validate manifest — done: `Manifest.validate()` checks mandatory fields, types, enums (`origin`/`type`/`shape`) and `allowed_methods` against `manifest_pattern` (the single source of truth), and runs on every load. Removed the redundant `manifest_schema.json` stub. Field reference: `DROPLETS.md`. Settings validation is pending the settings/manifest split below.
 
-[ ] Separate settings from manifest - example: x and y are settings, width, height and resize are manifest 
+[x] Separate settings from manifest - done: runtime state (`x`, `y`, `screen`, and resized `width`/`height`) is written to a sibling `settings.json` overlaid on load, so store updates never clobber the authored `manifest.json`. `Manifest.save_setting()` replaces the old `dump_manifest` write; `Manifest.validate_settings()` checks it. See `DROPLETS.md`.
 
 [ ] Complete the menu and enable it with basic functionality like move toggle, stick toggle, above toggle, disable, settings invoke, reload
 
-[ ] If stick is off, remember the widget screen in settings, gtk.Window.set_screen, gtk.Window.get_screen
+[x] If stick is off, remember the widget screen in settings — done: the GTK backend stores `get_screen().get_number()` to `settings.json` on focus-out when the widget isn't stuck. (Multi-X-screen `set_screen` restore is left as a `ponytail:` ceiling — near-extinct setup.)
 
-[ ] If app is resizable store the values in settings
+[x] If app is resizable store the values in settings — done: both backends persist the resized `width`/`height` to `settings.json` (GTK on focus-out, pywebview on the `resized` event) only when `resizable` is set.
 
-[ ] Define a settings file
+[x] Define a settings file — done: `settings.json`, a sibling of `manifest.json`, holds runtime keys (`x`, `y`, `screen`, `width`, `height`) and is validated by `Manifest.validate_settings()`. Format documented in `DROPLETS.md`.
 
 [ ] Build droplet process manager, and settings manager
 
 [ ] Disable webkit to resize gtk.Window
 
-[ ] Comment the goddamn code!!! >:/
+[x] Comment the goddamn code!!! >:/ — done in the PyGObject/WebKit2 port; both backends are commented.
 
 [ ] Include some kick ass bootstrap and the ability to theme it
 
@@ -101,13 +105,74 @@ Fun projects to test and perfect the framework(sorted by complexity):
 [ ] Build a debian distro... i always wanted that, ambicious arent i?
 
 
-Dependencies
-------------
-python-webkit 
+Backends
+--------
+There are two window/webview backends. The launcher picks one automatically:
 
-python-gtk2 >= 2.9
+* **gtk** (Linux) — GTK 3 + WebKitGTK + Cairo. The only backend with arbitrary
+  pixmap window masks (X11 SHAPE). Default on Linux.
+* **pywebview** (macOS/Windows) — the platform-native webview (WKWebView on
+  macOS, WebView2 on Windows). Lets the project be developed and run on a Mac
+  without a Linux VM. No arbitrary mask API — frameless + transparent shaping
+  only (rounded/circle/PNG-alpha via CSS).
 
-python-cairo
+Both expose the same `droplets.send(cmd)` / `droplets.recieve(result)` JS bridge
+and the same `allowed_methods` gate, so widgets run unchanged on either.
+
+Override the auto-pick with `DROPLETS_BACKEND=gtk` or `DROPLETS_BACKEND=pywebview`.
+
+Linux (gtk backend)
+-------------------
+The default backend. GTK 3 + WebKitGTK + Cairo — the only backend with arbitrary
+pixmap window masks (X11 SHAPE).
+
+**Requirements:** Python 3, PyGObject (`gi`) with GTK 3.0 + WebKit2, and pycairo.
+These are system packages, not pip wheels — install them from your distro.
+
+    # Debian / Ubuntu
+    sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+
+    # Fedora
+    sudo dnf install python3-gobject gtk3 webkit2gtk4.1 python3-cairo
+
+**Run a droplet:**
+
+    python3 droplets.py apps/app-test
+
+**Development:** the GTK backend lives entirely in `droplets/droplet.py` — it's
+the only file that imports `gi`. On a Wayland session the X11 SHAPE mask
+(`reshapemask`) is a no-op; force `GDK_BACKEND=x11` to route through XWayland and
+keep it working:
+
+    GDK_BACKEND=x11 python3 droplets.py apps/your-widget
+
+macOS (pywebview backend)
+-------------------------
+Lets you develop and run droplets on a Mac without a Linux VM. Uses the native
+WKWebView. Selected automatically off Linux; no arbitrary mask API (frameless +
+transparent shaping only), but keep-below/stick/opacity are recovered natively
+through the underlying `NSWindow` (see `droplet_pywebview.py`).
+
+**Requirements:** Python 3 and pywebview:
+
+    pip install pywebview
+
+pywebview pulls in **pyobjc** (AppKit/Quartz) on macOS automatically — that's
+what the native window flags use, no extra install.
+
+**Run a droplet:**
+
+    python3 droplets.py apps/app-test
+
+**Development:** the macOS backend lives entirely in
+`droplets/droplet_pywebview.py`. `backend.py` auto-picks it off Linux; force it
+anywhere with `DROPLETS_BACKEND=pywebview`. `app-test` is decorated + hosted, so
+it won't exercise transparency/shaping — spin up a `transparent: true`,
+`decorated: false` widget to test the shaping and native-flag paths.
+
+_(Windows also uses the pywebview backend — `pip install pywebview` pulls in
+pythonnet + WebView2. Transparency is weaker there; the native-flag recovery
+above is macOS-only.)_
 
 Literature
 ----------
@@ -123,4 +188,9 @@ ivartech
 
 Licence
 -------
-Havent decided yet...
+MIT — see the `LICENSE` file.
+
+Note: bundled example apps may carry their own third-party licenses. The
+`apps/calculator` widget is old Apple Dashboard code and stays Apple Inc.'s
+property under Apple's license — see `apps/calculator/NOTICE`. It is not
+covered by the MIT license above.

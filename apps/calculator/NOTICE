@@ -1,0 +1,15 @@
+This app is NOT covered by the project's MIT license.
+
+apps/calculator is derived from Apple's Dashboard widget sample code. It is the
+property of Apple Inc. — very old property (Copyright © 2006-2007 Apple Inc.,
+All Rights Reserved), but Apple's property nonetheless.
+
+Apple's license (see Parts/Text.js and the other Parts/*.js headers) grants use,
+reproduction, and redistribution "for the sole purpose of creating Dashboard
+widgets for Mac OS X" and requires the full notice be retained in redistributions.
+
+Consequences:
+- This app is bundled only as an example. Treat it as reference, not as shippable
+  Droplets code.
+- It must NOT be distributed through a Droplets store under the project's MIT
+  terms. Quarantine or replace it before any store work.
