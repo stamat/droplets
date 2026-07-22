@@ -260,6 +260,10 @@ class Droplet:
     def droplet_move(self, x, y):
         self.window.move(int(x), int(y))
 
+    def droplet_options(self):
+        """Current values of the options the manifest declares (user's or default)."""
+        return self.manifest.option_values()
+
     def droplet_deactivate(self, w=None, e=None):
         self.on_focus_out()
         Gtk.main_quit()

@@ -1,15 +1,14 @@
 {
-    "title": "droplet-handle", 
-    "skip_pager": false, 
-    "handle_enabled": false, 
-    "height": 20, 
-    "decorated": false, 
-    "width": 100, 
-    "stick": true, 
-    "above": true, 
-    "y": 34, 
-    "x": 1148, 
-    "skip_taskbar": true, 
-    "hidden": true, 
-    "transparent": true
+    "title": "Droplets",
+    "description": "Turn droplets on and off, and configure them.",
+    "type": "app",
+    "origin": "local",
+    "allowed_methods": ["droplets", "screenshots", "set_enabled", "set_options", "autostart"],
+    "width": 940,
+    "height": 660,
+    "resizable": true,
+    "decorated": true,
+    "skip_taskbar": true,
+    "menubar": true,
+    "default_context_menu": true
 }

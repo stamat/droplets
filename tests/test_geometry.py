@@ -80,6 +80,9 @@ def _droplet(manifest, settle=0.05, layout="1512x982+0+0"):
     droplet.layout_key = layout
     droplet.temp = {"x": manifest.x, "y": manifest.y}
     droplet._save_timer = None
+    # No menu-bar item, so on_close saves and lets the window go.
+    droplet._status_item = None
+    droplet._quitting = False
     return droplet
 
 

@@ -60,7 +60,7 @@ TO DOs:
 
 [ ] Whenever a droplet is started it invokes the interwidget communicaton system.
 
-[ ] Set StatusIcon for the app and widget manager
+[x] Set StatusIcon for the app and widget manager — done on macOS: `menubar: true` adds an `NSStatusItem` whose click shows/hides the window, and `skip_taskbar: true` drops the Dock tile (accessory activation policy). The manager ships with both, so it lives in the menu bar only. GTK equivalent (`AppIndicator`) still open.
 
 [x] Implement json validator to validate manifest — done: `Manifest.validate()` checks mandatory fields, types, enums (`origin`/`type`/`shape`) and `allowed_methods` against `manifest_pattern` (the single source of truth), and runs on every load. Removed the redundant `manifest_schema.json` stub. Field reference: `DROPLETS.md`. Settings validation is pending the settings/manifest split below.
 
@@ -74,7 +74,7 @@ TO DOs:
 
 [x] Define a settings file — done: `settings.json`, a sibling of `manifest.json`, holds runtime keys (`x`, `y`, `screen`, `width`, `height`) and is validated by `Manifest.validate_settings()`. Format documented in `DROPLETS.md`.
 
-[ ] Build droplet process manager, and settings manager
+[x] Build droplet process manager, and settings manager — done: `system/manager` is a droplet that lists everything in `apps/`, turns each on/off (one `droplets.py <dir>` process each, running state read from the process table) and renders a settings form from the `options` schema in each manifest. Geometry names are blacklisted as option names. See [`DROPLETS.md`](DROPLETS.md). Store browsing/installing is the remaining half.
 
 [ ] Disable webkit to resize gtk.Window
 

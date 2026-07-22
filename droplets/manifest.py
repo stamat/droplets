@@ -23,14 +23,26 @@ _ENUMS = {
 }
 
 # Runtime state a running droplet writes back (window moved/resized, which
-# screen it lives on). These live in a sibling settings.json, NOT the authored
-# manifest.json, so store updates never clobber the user's placement. Every key
-# is also in manifest_pattern, so its type is validated against that default --
-# except 'layouts', which is settings-only (see layout()/save_layout()).
-_SETTINGS_KEYS = ("x", "y", "screen", "width", "height", "layouts")
+# screen it lives on, whether the user turned it on). These live in a sibling
+# settings.json, NOT the authored manifest.json, so store updates never clobber
+# the user's placement. Every key is also in manifest_pattern, so its type is
+# validated against that default -- except 'layouts', which is settings-only
+# (see layout()/save_layout()). Author-declared options (see 'options' below)
+# are written here too, and are the only other keys accepted.
+_SETTINGS_KEYS = ("x", "y", "screen", "width", "height", "layouts", "enabled")
 
 # Geometry keys remembered per display layout inside 'layouts'.
 _LAYOUT_KEYS = ("x", "y", "width", "height")
+
+# Types an author may declare for a user-editable option. bool is listed
+# separately from int because it is a subclass of it (see _option_value_ok).
+_OPTION_TYPES = {
+    "string": (str,),
+    "int": (int,),
+    "number": (int, float),
+    "bool": (bool,),
+    "enum": (str,),
+}
 
 
 def _type_ok(value, default):
@@ -48,7 +60,18 @@ def _type_ok(value, default):
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if isinstance(default, str):
         return isinstance(value, str)
+    if isinstance(default, (list, dict)):  # screenshots, options
+        return isinstance(value, type(default))
     return True
+
+
+def _option_value_ok(kind, value):
+    """Does `value` match a declared option type?"""
+    if kind == "bool":
+        return isinstance(value, bool)
+    if isinstance(value, bool):
+        return False  # True is not an int/number/string as far as an option goes
+    return isinstance(value, _OPTION_TYPES[kind])
 
 
 class Manifest:
@@ -65,6 +88,12 @@ class Manifest:
         self.dict = manifest
         self.validate(manifest)
         self.apply_values(manifest)
+
+        # Author-declared options start at their declared default, so a widget
+        # reads manifest.<option> whether or not the user ever changed it. The
+        # settings overlay below is what replaces one with a user's value.
+        for name, spec in self.options.items():
+            setattr(self, name, spec.get("default"))
 
         # Overlay runtime settings (moved/resized/screen) on top of the authored
         # manifest. Missing file = first run, no overrides.
@@ -143,24 +172,136 @@ class Manifest:
                     "%r must be one of %s, got %r" % (key, _ENUMS[key], value)
                 )
 
-        am = manifest.get("allowed_methods")
-        if am is not None and not (
-            isinstance(am, list) and all(isinstance(x, str) for x in am)
-        ):
-            errors.append("'allowed_methods' must be a list of strings")
+        for key in ("allowed_methods", "screenshots"):
+            value = manifest.get(key)
+            if value is not None and not (
+                isinstance(value, list) and all(isinstance(x, str) for x in value)
+            ):
+                errors.append("%r must be a list of strings" % key)
+
+        errors.extend(self.validate_options(manifest.get("options", {})))
 
         if errors:
             raise ValueError(
                 "Invalid manifest %s:\n  - %s" % (self.path, "\n  - ".join(errors))
             )
 
+    @property
+    def reserved_option_names(self):
+        """Names an author's option may NOT take.
+
+        Option values are stored flat in settings.json and applied as attributes,
+        exactly like the geometry the runtime writes -- so an option called `x`
+        or `width` would fight the window's position, and one called `origin` or
+        `allowed_methods` would let a user-editable file rewrite the security
+        tier. Every manifest field and every settings/layout key is off limits.
+        """
+        return set(self.defaults) | set(_SETTINGS_KEYS) | set(_LAYOUT_KEYS)
+
+    def validate_options(self, options):
+        """Check the manifest's `options` schema. Returns a list of problems."""
+        if not isinstance(options, dict):
+            return ["'options' must be an object, got %s" % type(options).__name__]
+
+        errors = []
+        reserved = self.reserved_option_names
+        for name, spec in options.items():
+            where = "option %r" % name
+            if name in reserved:
+                errors.append(
+                    "%s is a reserved name (geometry or manifest field)" % where
+                )
+            if not isinstance(spec, dict):
+                errors.append(
+                    "%s must be an object, got %s" % (where, type(spec).__name__)
+                )
+                continue
+            kind = spec.get("type")
+            if kind not in _OPTION_TYPES:
+                errors.append(
+                    "%s has unknown type %r (allowed: %s)"
+                    % (where, kind, ", ".join(sorted(_OPTION_TYPES)))
+                )
+                continue
+            if kind == "enum":
+                choices = spec.get("choices")
+                if not (
+                    isinstance(choices, list)
+                    and choices
+                    and all(isinstance(c, str) for c in choices)
+                ):
+                    errors.append(
+                        "%s needs 'choices': a non-empty list of strings" % where
+                    )
+                elif "default" in spec and spec["default"] not in choices:
+                    errors.append(
+                        "%s default %r is not one of its choices" % (where, spec["default"])
+                    )
+                continue
+            for bound in ("min", "max"):
+                if bound in spec and not _option_value_ok("number", spec[bound]):
+                    errors.append("%s: %r must be a number" % (where, bound))
+            if "default" in spec and not _option_value_ok(kind, spec["default"]):
+                errors.append(
+                    "%s default has wrong type: expected %s, got %s"
+                    % (where, kind, type(spec["default"]).__name__)
+                )
+        return errors
+
+    def option_errors(self, name, value):
+        """Check one option *value* against its declared spec."""
+        spec = self.options.get(name)
+        if spec is None:
+            return ["unknown option %r" % name]
+        kind = spec["type"]
+        if not _option_value_ok(kind, value):
+            return [
+                "%r has wrong type: expected %s, got %s"
+                % (name, kind, type(value).__name__)
+            ]
+        if kind == "enum" and value not in spec["choices"]:
+            return ["%r must be one of %s, got %r" % (name, spec["choices"], value)]
+        errors = []
+        if "min" in spec and value < spec["min"]:
+            errors.append("%r must be >= %s, got %r" % (name, spec["min"], value))
+        if "max" in spec and value > spec["max"]:
+            errors.append("%r must be <= %s, got %r" % (name, spec["max"], value))
+        return errors
+
+    def option_values(self):
+        """Every declared option's current value (user's, else the default)."""
+        return {
+            name: getattr(self, name, spec.get("default"))
+            for name, spec in self.options.items()
+        }
+
+    def save_options(self, values):
+        """Validate author-declared option values, then persist them.
+
+        The manager writes user input through here rather than save_setting, so
+        a bad value is rejected at the boundary instead of at the widget's next
+        launch (settings.json is validated on load, and a widget that fails
+        validation does not start).
+        """
+        errors = []
+        for name, value in values.items():
+            errors.extend(self.option_errors(name, value))
+        if errors:
+            raise ValueError(
+                "Invalid options for %s:\n  - %s" % (self.path, "\n  - ".join(errors))
+            )
+        self.save_setting(**values)
+
     def validate_settings(self, settings):
-        """Check settings.json: only runtime keys, each the right type."""
+        """Check settings.json: runtime keys and declared options, right types."""
         errors = []
         for key, value in settings.items():
-            if key not in _SETTINGS_KEYS:
+            if key in self.options:
+                errors.extend(self.option_errors(key, value))
+            elif key not in _SETTINGS_KEYS:
                 errors.append(
-                    "unknown setting %r (allowed: %s)" % (key, ", ".join(_SETTINGS_KEYS))
+                    "unknown setting %r (allowed: %s)"
+                    % (key, ", ".join(tuple(_SETTINGS_KEYS) + tuple(self.options)))
                 )
             elif key == "layouts":
                 errors.extend(self._layout_errors(value))

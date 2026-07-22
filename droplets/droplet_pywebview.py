@@ -155,6 +155,11 @@ class Droplet:
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
         self._save_timer = None
+        # Set only for a `menubar` droplet on macOS (see _install_status_item);
+        # their presence is what makes the close button hide instead of quit.
+        self._status_item = None
+        self._status_target = None
+        self._quitting = False
 
         self.init_widget(path, custom_manifest)
         # debug=True turns on developer extras -> right-click "Inspect Element".
@@ -198,6 +203,10 @@ class Droplet:
     def droplet_move(self, x, y):
         self.window.move(int(x), int(y))
 
+    def droplet_options(self):
+        """Current values of the options the manifest declares (user's or default)."""
+        return self.manifest.option_values()
+
     def droplet_deactivate(self):
         self.on_close()
         self.window.destroy()
@@ -231,6 +240,15 @@ class Droplet:
         if self._save_timer is not None:
             self._save_timer.cancel()
         self.save_geometry()
+
+        if self._status_item is not None and not self._quitting:
+            # A menu-bar droplet has no Dock tile, so quitting on the close
+            # button would strand the user: the window is gone and the only
+            # handle left is a status item belonging to a dead process. Hide
+            # instead -- Quit lives in that item's menu. Returning False here
+            # cancels the close (webview.event.Event.set).
+            self.window.hide()
+            return False
 
     def save_geometry(self):
         """Persist runtime state (position, resized size) to settings.json.
@@ -399,6 +417,97 @@ class Droplet:
             ns.setCollectionBehavior_((1 << 0) | (1 << 4))
         if manifest.opacity is not None and manifest.opacity < 1:
             ns.setAlphaValue_(manifest.opacity)
+
+        if manifest.skip_taskbar:
+            # The Dock is macOS's taskbar. Accessory is LSUIElement applied at
+            # runtime: no Dock tile, no app menu -- what a widget wants, and what
+            # lets the manager live in the menu bar alone. `app` droplets leave
+            # skip_taskbar false and keep their Dock tile.
+            from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+
+            NSApplication.sharedApplication().setActivationPolicy_(
+                NSApplicationActivationPolicyAccessory
+            )
+        if manifest.menubar:
+            self._install_status_item(ns)
+
+    def _install_status_item(self, ns):
+        """Put the droplet in the macOS menu bar, with a show/hide + quit menu.
+
+        For a droplet that is not in the Dock (skip_taskbar) this is the only
+        handle the user has on it, so it carries the quit action too. Runs on
+        the main thread -- _apply_native_macos has already hopped there.
+        """
+        from AppKit import (
+            NSApplication,
+            NSImage,
+            NSMakeSize,
+            NSMenu,
+            NSMenuItem,
+            NSStatusBar,
+            NSVariableStatusItemLength,
+        )
+        from Foundation import NSObject
+
+        if self._status_item is not None:
+            return
+        droplet = self
+
+        class _StatusTarget(NSObject):
+            # ObjC needs a real object for target/action. Defined here rather
+            # than at module scope so importing this module stays platform-free.
+            def toggle_(self, _sender):
+                if ns.isVisible():
+                    ns.orderOut_(None)
+                else:
+                    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                    ns.makeKeyAndOrderFront_(None)
+
+            def quit_(self, _sender):
+                # terminate_ does not run the closing handler, so geometry is
+                # flushed here; the flag keeps on_close from hiding the window
+                # instead of letting it go.
+                droplet._quitting = True
+                droplet.on_close()
+                # Let the widget module clean up before the process dies --
+                # the manager uses this to terminate the droplets it launched.
+                hook = getattr(droplet.module, "on_quit", None)
+                if callable(hook):
+                    hook()
+                NSApplication.sharedApplication().terminate_(None)
+
+        item = NSStatusBar.systemStatusBar().statusItemWithLength_(
+            NSVariableStatusItemLength
+        )
+        button = item.button()
+        icon = self.manifest.icon and os.path.join(self.path, self.manifest.icon)
+        image = NSImage.alloc().initWithContentsOfFile_(icon) if icon else None
+        if image is None and hasattr(NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
+            # No icon shipped: the generic droplet glyph beats a logo squeezed
+            # into 18px. SF Symbols is macOS 11+, hence the check.
+            image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+                "drop.fill", self.manifest.title or "Droplet"
+            )
+        if image is not None:
+            image.setSize_(NSMakeSize(18, 18))
+            image.setTemplate_(True)  # tints itself for light/dark menu bars
+            button.setImage_(image)
+        else:
+            button.setTitle_(self.manifest.title or "Droplet")
+
+        target = _StatusTarget.alloc().init()
+        menu = NSMenu.alloc().init()
+        show = menu.addItemWithTitle_action_keyEquivalent_(
+            "Show %s" % (self.manifest.title or "Droplet"), "toggle:", ""
+        )
+        show.setTarget_(target)
+        menu.addItem_(NSMenuItem.separatorItem())
+        quit_item = menu.addItemWithTitle_action_keyEquivalent_("Quit", "quit:", "q")
+        quit_item.setTarget_(target)
+        item.setMenu_(menu)
+
+        # Both held only so ObjC's unowned references stay alive.
+        self._status_item, self._status_target = item, target
 
     def _hide_scrollbars(self):
         """Take the main-frame scrollbar off a widget's page.

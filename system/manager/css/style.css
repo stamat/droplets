@@ -1,0 +1,249 @@
+/* Droplet manager. Follows the system appearance -- it is a real app window,
+   not a widget, so it should look like one on either theme. */
+
+:root {
+	--bg: #f6f6f8;
+	--panel: #ffffff;
+	--line: #e2e2e8;
+	--text: #1c1c20;
+	--muted: #75757f;
+	--accent: #4c8dff;
+	--error: #c8352a;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #17171b;
+		--panel: #202026;
+		--line: #2e2e36;
+		--text: #e8e8ea;
+		--muted: #8b8b96;
+		--accent: #4c8dff;
+		--error: #e2564a;
+	}
+}
+
+/* reset.css forces section/article to display:block and .grid is display:grid,
+   both of which beat the browser's [hidden]{display:none}. Put it back, or the
+   detail view and the library show at once and an option-less droplet still
+   renders its (empty) settings panel and Save button. */
+[hidden] { display: none !important; }
+
+body {
+	font: 13px/1.5 -apple-system, "Segoe UI", Cantarell, sans-serif;
+	background: var(--bg);
+	color: var(--text);
+	padding: 0 24px 32px;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+h1 { font-size: 17px; font-weight: 600; }
+h2 { font-size: 14px; font-weight: 600; }
+h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+
+.muted { color: var(--muted); }
+.error { color: var(--error); }
+
+/* ---- top bar ---------------------------------------------------------- */
+
+#bar {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 18px 0 14px;
+	background: var(--bg);
+	border-bottom: 1px solid var(--line);
+	margin-bottom: 20px;
+}
+
+#count { margin-left: auto; }
+
+#back {
+	font: inherit;
+	color: var(--text);
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 2px 10px;
+	cursor: pointer;
+}
+
+#back:hover { border-color: var(--accent); }
+
+/* ---- library grid ------------------------------------------------------ */
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 14px;
+}
+
+.card {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 14px;
+}
+
+.card.on { border-color: var(--accent); }
+
+.card .open {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	flex: 1;
+	min-width: 0;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	background: none;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+
+.card-text { min-width: 0; }
+
+/* Two lines of description, then an ellipsis: cards stay the same height
+   whatever the author wrote. */
+.card-text p {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	margin-top: 2px;
+}
+
+.card.broken { display: block; }
+
+.icon {
+	width: 44px;
+	height: 44px;
+	object-fit: contain;
+	border-radius: 8px;
+	flex: none;
+}
+
+.icon.lg { width: 72px; height: 72px; border-radius: 12px; }
+
+.badges { margin-top: 6px; }
+
+.badge {
+	display: inline-block;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 1px 6px;
+	margin-right: 4px;
+}
+
+/* ---- on/off switch ----------------------------------------------------- */
+
+.switch { flex: none; position: relative; display: inline-block; width: 38px; height: 22px; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+
+.slider {
+	position: absolute;
+	inset: 0;
+	background: var(--line);
+	border-radius: 11px;
+	transition: background 0.15s ease;
+	pointer-events: none;
+}
+
+.slider::after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 16px;
+	height: 16px;
+	background: #fff;
+	border-radius: 50%;
+	transition: transform 0.15s ease;
+}
+
+.switch input:checked + .slider { background: var(--accent); }
+.switch input:checked + .slider::after { transform: translateX(16px); }
+.switch input:disabled + .slider { opacity: 0.5; }
+
+/* ---- detail view ------------------------------------------------------- */
+
+.hero {
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	/* Match .card padding so the on/off toggle sits at the same x in the grid
+	   and the detail view -- it must not jump when a card is opened. */
+	padding: 14px;
+}
+
+.hero-text { flex: 1; min-width: 0; }
+
+/* Demo images, as wide as they like -- the strip scrolls rather than the page. */
+.shots {
+	display: flex;
+	gap: 12px;
+	overflow-x: auto;
+	padding: 20px 0 4px;
+}
+
+.shots img {
+	height: 180px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+#settings {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 18px;
+	margin-top: 20px;
+}
+
+.field { margin-bottom: 14px; }
+.field label { display: block; margin-bottom: 4px; }
+.field.inline { display: flex; align-items: center; gap: 8px; }
+.field.inline label { margin: 0; }
+.hint { margin-top: 4px; }
+
+input[type="text"], input[type="number"], select {
+	font: inherit;
+	color: var(--text);
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 5px 8px;
+	width: 240px;
+	max-width: 100%;
+}
+
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.actions { display: flex; align-items: center; gap: 10px; }
+
+#save {
+	font: inherit;
+	color: #fff;
+	background: var(--accent);
+	border: 0;
+	border-radius: 6px;
+	padding: 6px 16px;
+	cursor: pointer;
+}
+
+#save:active { opacity: 0.8; }

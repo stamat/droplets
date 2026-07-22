@@ -85,7 +85,9 @@
 	</div>
 
 	<script>
-		var POLL_MS = 1000;
+		// Set from the manifest's `options` (what the manager edits) before the
+		// first sample; these are only the fallback if that reply never lands.
+		var options = { poll_seconds: 1, net_units: 'bytes' };
 
 		function el(id) { return document.getElementById(id); }
 
@@ -105,6 +107,14 @@
 		}
 
 		droplets.recieve = function (stats) {
+			// One callback, two kinds of reply: the options come back once at
+			// startup, every sample after that is a stats snapshot.
+			if (!stats || stats.cpu === undefined) {
+				if (stats) options = stats;
+				poll();
+				return;
+			}
+
 			if (stats.cpu === null) {
 				// First reply after launch: no previous sample to diff against yet.
 				el('cpu-sub').textContent = stats.cores + ' cores';
@@ -122,20 +132,23 @@
 				bytes(disk.total - disk.used) + ' free of ' + bytes(disk.total));
 
 			if (stats.net) {
-				el('net-value').textContent =
-					'↓ ' + bytes(stats.net.rx) + '/s   ↑ ' + bytes(stats.net.tx) + '/s';
+				var bits = options.net_units === 'bits';
+				var rate = function (n) { return (bits ? bytes(n * 8) + 'b' : bytes(n) + 'B') + '/s'; };
+				el('net-value').textContent = '↓ ' + rate(stats.net.rx) + '   ↑ ' + rate(stats.net.tx);
 			}
 
 			// Chained rather than setInterval: one request in flight at a time,
 			// so a slow reply can't queue a backlog of them.
-			setTimeout(poll, POLL_MS);
+			setTimeout(poll, options.poll_seconds * 1000);
 		};
 
 		function poll() {
 			droplets.send(JSON.stringify({ method: 'stats', args: {} }));
 		}
 
-		poll();
+		// droplet_* actions are the runner's own, so this works regardless of
+		// the manifest's allowed_methods allowlist. Polling starts on its reply.
+		droplets.send(JSON.stringify({ method: 'droplet_options', args: {} }));
 	</script>
 
 </body>

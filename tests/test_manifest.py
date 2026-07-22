@@ -178,6 +178,113 @@ def test_bad_layouts_rejected():
                 raise AssertionError("expected ValueError for %r" % settings)
 
 
+def test_options_default_applied_and_overridden():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {
+            "width": 1, "height": 1,
+            "options": {
+                "city": {"type": "string", "default": "Belgrade"},
+                "refresh": {"type": "int", "default": 60, "min": 5},
+                "compact": {"type": "bool", "default": False},
+            },
+        })
+        m = Manifest(os.path.join(d, "manifest.json"))
+        # An option reads as an attribute whether or not the user ever set it.
+        assert (m.city, m.refresh, m.compact) == ("Belgrade", 60, False)
+        assert m.option_values() == {"city": "Belgrade", "refresh": 60, "compact": False}
+
+        m.save_options({"city": "Novi Sad", "refresh": 300})
+        again = Manifest(os.path.join(d, "manifest.json"))
+        assert again.city == "Novi Sad" and again.refresh == 300
+        assert again.compact is False          # untouched option keeps its default
+        with open(os.path.join(d, "manifest.json")) as f:
+            assert "Novi Sad" not in f.read()  # authored manifest never rewritten
+
+
+def test_geometry_and_manifest_names_rejected_as_options():
+    # The blacklist: an option may not claim a geometry key (it would fight the
+    # window) or any manifest field (settings.json is user-editable, so an
+    # option named `origin`/`allowed_methods` would be a way around the tier).
+    for name in ("x", "y", "width", "height", "screen", "layouts", "enabled",
+                 "origin", "allowed_methods", "options"):
+        with tempfile.TemporaryDirectory() as d:
+            path = _write(d, "manifest.json", {
+                "width": 1, "height": 1,
+                "options": {name: {"type": "string", "default": "x"}},
+            })
+            try:
+                Manifest(path)
+            except ValueError as e:
+                assert "reserved" in str(e), (name, str(e))
+            else:
+                raise AssertionError("option %r was allowed" % name)
+
+
+def test_bad_option_schema_rejected():
+    bad = [
+        {"a": {"type": "colour"}},                               # unknown type
+        {"a": {"type": "enum"}},                                 # enum without choices
+        {"a": {"type": "enum", "choices": []}},                  # empty choices
+        {"a": {"type": "enum", "choices": ["x"], "default": "y"}},  # default off-list
+        {"a": {"type": "int", "default": "5"}},                  # default wrong type
+        {"a": {"type": "int", "min": "5"}},                      # bound not a number
+        {"a": "string"},                                         # spec not an object
+    ]
+    for options in bad:
+        with tempfile.TemporaryDirectory() as d:
+            path = _write(d, "manifest.json", {"width": 1, "height": 1, "options": options})
+            try:
+                Manifest(path)
+            except ValueError as e:
+                assert "option 'a'" in str(e), (options, str(e))
+            else:
+                raise AssertionError("expected ValueError for %r" % options)
+
+
+def test_bad_option_values_rejected():
+    schema = {
+        "width_px": {"type": "int", "min": 5, "max": 50},
+        "mode": {"type": "enum", "choices": ["a", "b"]},
+        "on": {"type": "bool"},
+    }
+    bad = [
+        {"width_px": "20"},   # wrong type
+        {"width_px": True},   # a bool is not an int here
+        {"width_px": 4},      # below min
+        {"width_px": 51},     # above max
+        {"mode": "c"},        # off the choice list
+        {"on": 1},            # int is not a bool
+        {"nope": 1},          # not declared at all
+    ]
+    for values in bad:
+        with tempfile.TemporaryDirectory() as d:
+            _write(d, "manifest.json", {"width": 1, "height": 1, "options": schema})
+            m = Manifest(os.path.join(d, "manifest.json"))
+            try:
+                m.save_options(values)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("save_options accepted %r" % values)
+            # ... and the same value is rejected when hand-written into settings.
+            _write(d, "settings.json", values)
+            try:
+                Manifest(os.path.join(d, "manifest.json"))
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("settings.json accepted %r" % values)
+
+
+def test_enabled_is_a_setting():
+    with tempfile.TemporaryDirectory() as d:
+        _write(d, "manifest.json", {"width": 1, "height": 1})
+        m = Manifest(os.path.join(d, "manifest.json"))
+        assert m.enabled is False           # nothing runs until the user says so
+        m.save_setting(enabled=True)
+        assert Manifest(os.path.join(d, "manifest.json")).enabled is True
+
+
 def test_shipped_manifests_are_valid():
     # Every manifest in the repo must pass validation.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -202,5 +309,10 @@ if __name__ == "__main__":
     test_bad_settings_rejected()
     test_save_layout_writes_per_layout_and_top_level()
     test_bad_layouts_rejected()
+    test_options_default_applied_and_overridden()
+    test_geometry_and_manifest_names_rejected_as_options()
+    test_bad_option_schema_rejected()
+    test_bad_option_values_rejected()
+    test_enabled_is_a_setting()
     test_shipped_manifests_are_valid()
     print("ok")

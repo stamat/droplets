@@ -4,6 +4,22 @@
     "type": "widget",
     "origin": "local",
     "allowed_methods": ["stats"],
+    "options": {
+        "poll_seconds": {
+            "type": "int",
+            "label": "Refresh every",
+            "description": "Seconds between samples.",
+            "default": 1,
+            "min": 1,
+            "max": 60
+        },
+        "net_units": {
+            "type": "enum",
+            "label": "Network units",
+            "choices": ["bytes", "bits"],
+            "default": "bytes"
+        }
+    },
     "width": 200,
     "height": 210,
     "shape": "roundedrect",

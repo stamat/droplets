@@ -1,30 +1,51 @@
 <!doctype html>
-<html lang="en"> 
+<html lang="en">
 <head>
 	<meta charset="utf-8">
-	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-	
-	<title></title>
-	
-	<meta name="description" content="An iVar project">
-	<meta name="author" content="http://www.ivar.rs/">
-	
+	<title>Droplets</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	
-	<link rel="shortcut icon" href="favicon.ico">
-	
+
 	<link rel="stylesheet" href="css/reset.css">
 	<link rel="stylesheet" href="css/style.css">
-	
-	<script type="text/javascript" src='js/libs/jquery.min.js'></script>
-	
 </head>
 <body>
-		
-	<div id="container"><!-- main start -->
 
-	</div><!-- end of #container -->
-	
+	<header id="bar">
+		<button id="back" type="button" hidden>&larr;</button>
+		<h1 id="heading">Droplets</h1>
+		<span id="count" class="muted"></span>
+	</header>
+
+	<!-- The library: one card per droplet in apps/. -->
+	<main id="library" class="grid"></main>
+
+	<!-- Detail view for a single droplet; filled in by js/script.js. -->
+	<main id="detail" hidden>
+		<section class="hero">
+			<img id="detail-icon" class="icon lg" alt="">
+			<div class="hero-text">
+				<h2 id="detail-title"></h2>
+				<p id="detail-badges" class="badges"></p>
+				<p id="detail-description" class="muted"></p>
+			</div>
+			<label class="switch">
+				<input type="checkbox" id="detail-toggle">
+				<span class="slider"></span>
+			</label>
+		</section>
+
+		<section id="shots" class="shots" hidden></section>
+
+		<section id="settings" hidden>
+			<h3>Settings</h3>
+			<form id="options"></form>
+			<p class="actions">
+				<button type="button" id="save">Save</button>
+				<span id="saved" class="muted"></span>
+			</p>
+		</section>
+	</main>
+
 	<script src="js/script.js"></script>
 </body>
 </html>

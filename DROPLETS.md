@@ -129,7 +129,8 @@ allowed (passed through untouched).
 | `description` | `null` | string | Human description. |
 | `uid` | `null` | string | Unique id; generated after first run, used for interwidget comms. |
 | `type` | `"widget"` | enum `widget`\|`app` | `app` → decorated window; `widget` → frameless + context menu. |
-| `icon` | `null` | string | Icon file path. |
+| `icon` | `null` | string | Icon file path. Also the menu-bar glyph when `menubar` is set. |
+| `screenshots` | `[]` | list of strings | Demo image paths, shown as a gallery in the manager. |
 
 ### Loading
 
@@ -162,15 +163,25 @@ allowed (passed through untouched).
 | `stick` | `false` | bool | Show on all workspaces / Spaces. |
 | `drag` | `false` | bool | Drag the window by its body. |
 | `hidden` | `false` | bool | Start hidden. |
-| `skip_taskbar` | `false` | bool | Hide from the taskbar. |
+| `skip_taskbar` | `false` | bool | Hide from the taskbar — **the Dock on macOS**. |
 | `skip_pager` | `false` | bool | Hide from the pager. |
+| `menubar` | `false` | bool | macOS: put the droplet in the menu bar; clicking the item shows/hides its window. |
 | `default_context_menu` | `false` | bool | Use the webview's native right-click menu. |
 
-> Backend note: `shape: mask`, `skip_taskbar`/`skip_pager` and per-window
-> keep-below are strongest on the GTK/X11 backend. On macOS (pywebview)
-> keep-below/stick/opacity are recovered natively via `NSWindow`;
-> `skip_taskbar` maps to an app-bundle `LSUIElement` key at packaging time.
-> See the Backends section of [`README.md`](README.md).
+Which of the three a droplet should use:
+
+| | Dock / taskbar | Menu bar |
+|---|---|---|
+| widget (clock, sysmon, …) | no — `skip_taskbar: true` | no |
+| app (calculator, a notepad) | yes — leave `skip_taskbar` false | no |
+| manager / anything long-running | no — `skip_taskbar: true` | yes — `menubar: true` |
+
+> Backend note: `shape: mask` and `skip_pager` are GTK/X11 only. On macOS
+> (pywebview) keep-below/stick/opacity are recovered natively via `NSWindow`;
+> `skip_taskbar` sets the accessory activation policy (`LSUIElement` at
+> runtime), so the process gets no Dock tile, and `menubar` adds an
+> `NSStatusItem` — the droplet's `icon` if it ships one, otherwise the `drop.fill`
+> SF Symbol. See the Backends section of [`README.md`](README.md).
 
 ---
 
@@ -189,6 +200,8 @@ update to the shipped manifest never clobbers the user's placement.
 | `width` | `300` | window resized (only when `resizable` is `true`) |
 | `height` | `300` | window resized (only when `resizable` is `true`) |
 | `layouts` | `{}` | same as above, kept per monitor arrangement (pywebview backend) |
+| `enabled` | `false` | the user switched the droplet on in the manager |
+| *(your options)* | as declared | the user edited them in the manager (see below) |
 
 Moves and resizes are debounced (`_SETTLE_DELAY`, 0.5s of stillness) so one drag
 costs one write, at the end of the drag rather than at close.
@@ -231,6 +244,81 @@ Whichever wins is still dropped if it lands on no attached display
 (`_rect_on_screen`), so a widget never restores off in the void. `save_layout`
 mirrors to the top-level keys as it writes, so downgrading loses the per-layout
 memory but not the last position.
+
+---
+
+## User options
+
+Geometry is settings the *runtime* writes. `options` is settings the **user**
+writes: the manifest declares a form, the manager renders it, and the answers
+land in the same `settings.json`.
+
+```json
+{
+    "width": 200, "height": 210,
+    "options": {
+        "poll_seconds": {
+            "type": "int", "label": "Refresh every",
+            "description": "Seconds between samples.",
+            "default": 1, "min": 1, "max": 60
+        },
+        "net_units": {
+            "type": "enum", "label": "Network units",
+            "choices": ["bytes", "bits"], "default": "bytes"
+        }
+    }
+}
+```
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `type` | yes | `string`, `int`, `number`, `bool` or `enum`. |
+| `choices` | `enum` only | Non-empty list of strings. |
+| `default` | no | Value before the user touches anything. Must match `type` (and be one of `choices`). |
+| `min` / `max` | no | Bounds for `int`/`number`, enforced on save *and* on load. |
+| `label` | no | Field label in the manager (defaults to the option's name). |
+| `description` | no | Hint under the field. |
+
+### Reading them
+
+Values are applied as attributes, so Python reads `manifest.poll_seconds`
+directly. JavaScript asks the runner:
+
+```js
+droplets.send(JSON.stringify({ method: "droplet_options", args: {} }));
+// -> droplets.recieve({ poll_seconds: 1, net_units: "bytes" })
+```
+
+`droplet_options` is a built-in action (gate 3), so it works regardless of
+`allowed_methods`. Options are read at launch; the manager restarts a running
+droplet after a save so a change takes effect immediately.
+
+### Reserved names
+
+An option may not be named after any manifest field or settings key — the whole
+geometry set (`x`, `y`, `width`, `height`, `screen`, `layouts`), `enabled`, and
+every field in the table above. Two reasons: geometry is auto-populated by the
+running window and an option of the same name would fight it, and `settings.json`
+is user-editable, so an option called `origin` or `allowed_methods` would be a
+way to rewrite the security tier from outside the authored manifest. The loader
+rejects the manifest with `option 'x' is a reserved name`.
+
+---
+
+## The manager
+
+`system/manager` is itself a droplet (`type: app`, `origin: local`). It lists
+every directory in `apps/` that has a `manifest.json` and shows what the
+manifest declares — icon, title, description, `screenshots`, and a form built
+from `options`. Switching a droplet on spawns `droplets.py <dir>` as its own
+process; switching it off signals that process. What is running is read from the
+process table, so a droplet closed from its own context menu shows as off.
+
+`enabled` records the user's choice for later; replay it at login with:
+
+```sh
+python3 system/manager/main.py --autostart
+```
 
 ---
 
