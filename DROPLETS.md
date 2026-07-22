@@ -199,7 +199,7 @@ update to the shipped manifest never clobbers the user's placement.
 | `screen` | `0` | window placed on a screen (GTK backend, when not stuck) |
 | `width` | `300` | window resized (only when `resizable` is `true`) |
 | `height` | `300` | window resized (only when `resizable` is `true`) |
-| `layouts` | `{}` | same as above, kept per monitor arrangement (pywebview backend) |
+| `layouts` | `{}` | same as above, kept per monitor arrangement (both backends) |
 | *(your options)* | as declared | the user edited them in the manager (see below) |
 
 There is deliberately **no** `enabled` field here. Whether a droplet autostarts
@@ -217,12 +217,13 @@ any key outside the table above or with the wrong type. You never author
 `settings.json` by hand — the runtime creates and maintains it. Everything else
 in `manifest.json` is authored and read-only at runtime.
 
-### Multiple monitors
+### Multiple monitors & resolution changes
 
 One `x`/`y` can't describe a widget that lives top-right on the laptop screen and
 mid-left on the 4K when docked. So geometry is *also* stored per monitor
 arrangement, under `layouts`, keyed by a fingerprint of the attached displays
-(`WxH+X+Y` per screen, sorted, joined with `|`):
+(`WxH+X+Y` per screen, sorted, joined with `|`). **Both backends do this** — each
+resolution / monitor setup keeps its own remembered position and size:
 
 ```json
 {
@@ -236,18 +237,33 @@ arrangement, under `layouts`, keyed by a fingerprint of the attached displays
 ```
 
 `Manifest.layout(key)` reads an entry, `Manifest.save_layout(key, **geometry)`
-writes one; `_layout_key()` in the pywebview backend builds the fingerprint from
-`webview.screens`. Resolution order at startup:
+writes one. The fingerprint is built from the live displays — `_layout_key()` on
+pywebview (`webview.screens`), `geometry.layout_key()` on GTK (`Gdk` monitors);
+both emit the identical string. **Correcting a widget's spot for one arrangement
+is remembered for that arrangement only**, so switching back and forth stops the
+two placements from fighting over one `x`/`y`.
 
-1. `layouts[current fingerprint]` — the position this exact arrangement had.
-2. Top-level `x`/`y` — last known anywhere, also what pre-`layouts` settings
-   files and the GTK backend hold.
-3. The manifest's authored position.
+**Startup** resolution order:
 
-Whichever wins is still dropped if it lands on no attached display
-(`_rect_on_screen`), so a widget never restores off in the void. `save_layout`
-mirrors to the top-level keys as it writes, so downgrading loses the per-layout
-memory but not the last position.
+1. `layouts[current fingerprint]` — the exact spot this arrangement had → restored as-is.
+2. No entry yet (this setup is new, or the displays changed while the app was
+   closed) → **remap proportionally** from a saved arrangement: the widget's
+   fractional place on its old screen, mapped onto the matching current screen.
+3. No saved history at all → **clamp** the authored manifest `x`/`y` onto a real
+   monitor, so a widget authored for a wider display never opens off-screen.
+
+**While running**, both backends react live to display changes — macOS via
+`NSApplicationDidChangeScreenParameters`, Linux via `GdkScreen`
+`monitors-changed` / `size-changed`. On a change: if the new arrangement is
+already remembered, the widget is put back where it was left on it; otherwise it
+is remapped proportionally and that new spot is saved. The pure geometry math
+(fingerprint, screen-match, proportional remap, on-screen clamp) lives in
+`droplets/geometry.py`, backend-agnostic and unit-tested without a display.
+
+`save_layout` mirrors each write to the top-level `x`/`y`, so an older build that
+predates `layouts` still finds the last position, just without the per-setup
+memory. The one backend gap: on GTK the `screen` (X-server screen index) is still
+stored flat, not per-arrangement.
 
 ---
 

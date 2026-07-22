@@ -157,6 +157,46 @@ def test_gtk_second_monitor_origin_carries_into_the_result():
     assert x >= 1512  # stayed on the external
 
 
+# ---- per-arrangement memory (geometry.layouts helpers) --------------------
+
+def test_layout_key_matches_the_pywebview_backend_format():
+    # Both backends must fingerprint the same setup identically, or a widget's
+    # remembered spot would be invisible to the other one.
+    tuples = [(0, 0, 1512, 982), (-2560, 0, 2560, 1440)]
+    assert geometry.layout_key(tuples) == _layout_key(BOTH)
+
+
+def test_layout_key_roundtrips_through_screens_from_key():
+    tuples = [(0, 0, 1512, 982), (-2560, 0, 2560, 1440)]
+    key = geometry.layout_key(tuples)
+    # screens_from_key returns them in the key's sorted order.
+    assert sorted(geometry.screens_from_key(key)) == sorted(tuples)
+
+
+def test_screens_from_key_rejects_a_malformed_key():
+    assert geometry.screens_from_key("not-a-key") == []
+
+
+def test_source_layout_finds_the_arrangement_a_position_came_from():
+    a, b = "1280x800+0+0", "2560x1440+0+0"
+    layouts = {a: {"x": 10, "y": 20}, b: {"x": 30, "y": 40}}
+    assert geometry.source_layout(30, 40, layouts) == b
+    assert geometry.source_layout(99, 99, layouts) is None
+
+
+def test_remap_from_layouts_scales_off_the_source_arrangement():
+    src = geometry.layout_key([(0, 0, 2560, 1440)])
+    layouts = {src: {"x": 1210, "y": 650}}
+    assert geometry.remap_from_layouts(1210, 650, 140, 140, layouts, [(0, 0, 1280, 720)]) == (
+        605,
+        325,
+    )
+
+
+def test_remap_from_layouts_clamps_when_there_is_no_history():
+    assert geometry.remap_from_layouts(9999, 75, 140, 140, {}, [(0, 0, 1280, 800)]) == (1140, 75)
+
+
 class _Manifest:
     """The fields save_geometry reads, plus real layout()/save_layout() semantics
     over an in-memory settings dict (droplets.manifest owns the file I/O)."""
@@ -337,6 +377,12 @@ if __name__ == "__main__":
     test_gtk_global_y_scales_against_the_screen_origin()
     test_gtk_clamp_leaves_a_top_margin_and_stays_on_screen()
     test_gtk_second_monitor_origin_carries_into_the_result()
+    test_layout_key_matches_the_pywebview_backend_format()
+    test_layout_key_roundtrips_through_screens_from_key()
+    test_screens_from_key_rejects_a_malformed_key()
+    test_source_layout_finds_the_arrangement_a_position_came_from()
+    test_remap_from_layouts_scales_off_the_source_arrangement()
+    test_remap_from_layouts_clamps_when_there_is_no_history()
     test_drag_writes_settings_once_at_the_end()
     test_two_drags_write_once_each()
     test_close_mid_drag_flushes_pending_position()

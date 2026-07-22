@@ -575,9 +575,15 @@ class Droplet:
         # The arrangement changed -> so did its fingerprint; save under the new
         # one from here on (see save_geometry).
         self.layout_key = _layout_key(webview.screens)
-        width = self.temp.get("width", self.manifest.width)
-        height = self.temp.get("height", self.manifest.height)
-        x, y = _remap_between(self.temp["x"], self.temp["y"], width, height, old, new)
+        saved = self.manifest.layout(self.layout_key)
+        if "x" in saved:
+            # This arrangement was seen before -> restore its remembered spot
+            # rather than re-deriving one (per-resolution memory).
+            x, y = saved["x"], saved["y"]
+        else:
+            width = self.temp.get("width", self.manifest.width)
+            height = self.temp.get("height", self.manifest.height)
+            x, y = _remap_between(self.temp["x"], self.temp["y"], width, height, old, new)
         if (x, y) == (self.temp["x"], self.temp["y"]):
             return
         self.temp["x"], self.temp["y"] = x, y

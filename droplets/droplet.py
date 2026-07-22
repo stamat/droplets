@@ -159,46 +159,54 @@ class Droplet:
         """Reposition the widget when the display setup changes while it runs.
 
         GdkScreen fires monitors-changed / size-changed on any resolution or
-        monitor add/remove. We hold the previous layout in self._screens, so at
-        this point we have both old and new and can remap proportionally -- no
-        stored per-arrangement history needed (that's what the always-running
-        signal buys over the launch-time clamp).
+        monitor add/remove. If this exact arrangement was seen before, put the
+        widget back where it was left on it (per-resolution memory); otherwise
+        approximate from the old layout we still hold in self._screens.
         """
         new = self._monitor_rects()
         old, self._screens = self._screens, new
         if not old or not new or old == new or self.window is None:
             return
-        width, height = self.window.get_size()
-        cx, cy = self.window.get_position()
-        nx, ny = geometry.remap(cx, cy, width, height, old, new)
-        if (nx, ny) != (cx, cy):
+        saved = self.manifest.layout(geometry.layout_key(new))
+        if "x" in saved:
+            nx, ny = saved["x"], saved["y"]  # this arrangement remembered -> restore
+        else:
+            width, height = self.window.get_size()
+            cx, cy = self.window.get_position()
+            nx, ny = geometry.remap(cx, cy, width, height, old, new)  # first time
+        cur = self.window.get_position()
+        if (nx, ny) != (cur.root_x, cur.root_y):
             self.window.move(nx, ny)
-            self.temp["x"], self.temp["y"] = nx, ny
-            self.on_focus_out()  # persist the new spot
+        self.temp["x"], self.temp["y"] = nx, ny
+        self.on_focus_out()  # persist under this arrangement's key
 
     def on_configure(self, w, e):
         self.temp["x"], self.temp["y"] = w.get_position()
 
     def on_focus_out(self, w=None, e=None):
-        """Persist runtime state (position, resized size, screen) to settings.json."""
+        """Persist runtime state to settings.json, keyed by the current display
+        arrangement so each resolution / monitor setup keeps its own position."""
         m = self.manifest
-        changed = {}
-        if m.x != self.temp["x"] or m.y != self.temp["y"]:
-            changed["x"], changed["y"] = self.temp["x"], self.temp["y"]
-        # Resizable widgets: remember the resized dimensions.
+        key = geometry.layout_key(self._monitor_rects())
+        saved = m.layout(key)
+        geom = {}
+        if (saved.get("x", m.x), saved.get("y", m.y)) != (self.temp["x"], self.temp["y"]):
+            geom["x"], geom["y"] = self.temp["x"], self.temp["y"]
+        # Resizable widgets: remember the resized dimensions for this arrangement.
         if m.resizable and self.window is not None:
             width, height = self.window.get_size()
-            if (width, height) != (m.width, m.height):
-                changed["width"], changed["height"] = width, height
-        # Non-stuck widgets: remember which screen they live on.
-        # ponytail: stores the X screen index via get_number(); multi-X-screen
-        # restore (set_screen) is unbuilt — near-extinct setup, add if it bites.
+            if (saved.get("width", m.width), saved.get("height", m.height)) != (width, height):
+                geom["width"], geom["height"] = width, height
+        if geom:
+            m.save_layout(key, **geom)
+        # Non-stuck widgets: remember which X screen they live on (flat, not
+        # per-arrangement -- it is the X-server screen index, not geometry).
+        # ponytail: stored via get_number(); multi-X-screen restore (set_screen)
+        # is unbuilt -- near-extinct setup, add if it bites.
         if not m.stick and self.window is not None:
             screen = self.window.get_screen().get_number()
             if screen != m.screen:
-                changed["screen"] = screen
-        if changed:
-            m.save_setting(**changed)
+                m.save_setting(screen=screen)
 
     # ---- JS <-> Python bridge -------------------------------------------
 
@@ -455,7 +463,16 @@ class Droplet:
             child.add(browser)
         window.add(child)
 
-        window.resize(manifest.width, manifest.height)
+        # Per-arrangement geometry: this display setup's remembered size (see
+        # on_focus_out), falling back to the manifest for a setup not seen before.
+        self._screens = self._monitor_rects()
+        saved = manifest.layout(geometry.layout_key(self._screens))
+        if manifest.resizable:
+            window.resize(
+                saved.get("width", manifest.width), saved.get("height", manifest.height)
+            )
+        else:
+            window.resize(manifest.width, manifest.height)
 
         if manifest.shape == "roundedrect":
             window.connect("size-allocate", self.reshaperect, manifest.corner_radius)
@@ -467,11 +484,22 @@ class Droplet:
         if not manifest.hidden:
             window.show_all()
 
-        if manifest.x is not None and manifest.y is not None:
-            window.move(*self._clamp_on_monitor(manifest.x, manifest.y))
+        # Restore position: this arrangement's remembered spot if we have one,
+        # else approximate from another arrangement's saved spot, else clamp the
+        # authored manifest x/y onto a real monitor.
+        x = saved.get("x", manifest.x)
+        y = saved.get("y", manifest.y)
+        if x is not None and y is not None:
+            if "x" in saved:
+                x, y = self._clamp_on_monitor(x, y)  # guard a stale remembered entry
+            else:
+                x, y = geometry.remap_from_layouts(
+                    x, y, manifest.width, manifest.height,
+                    manifest.settings.get("layouts", {}), self._screens,
+                )
+            window.move(x, y)
 
-        # React live to resolution / monitor changes (see _on_monitors_changed).
-        self._screens = self._monitor_rects()
+        # React live to later resolution / monitor changes (_on_monitors_changed).
         screen = window.get_screen()
         screen.connect("monitors-changed", self._on_monitors_changed)
         screen.connect("size-changed", self._on_monitors_changed)

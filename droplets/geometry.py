@@ -10,8 +10,12 @@ without a display.
 A "screen" here is a plain (x, y, width, height) tuple.
 """
 
+import re
+
 # Room left at the top of a screen so a clamped widget clears a menu bar / panel.
 _TOP_MARGIN = 25
+
+_KEY_PART = re.compile(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$")
 
 
 def screen_at(x, y, screens):
@@ -59,3 +63,59 @@ def remap(x, y, width, height, old_screens, new_screens):
     nx = new[0] + round(fx * new[2])
     ny = new[1] + round(fy * new[3])
     return clamp(nx, ny, width, height, new)
+
+
+# ---- per-arrangement memory: fingerprint a monitor layout ----------------
+# A widget's position is stored keyed by these fingerprints, so each resolution
+# / monitor setup keeps its own remembered spot (see manifest.save_layout).
+
+
+def layout_key(screens):
+    """Fingerprint a monitor arrangement, e.g. "1512x982+0+0|2560x1440-2560+0".
+
+    Sorted so the same displays enumerated in a different order stay one key.
+    Matches the string the pywebview backend builds, so the two never diverge.
+    """
+    return "|".join(sorted("%dx%d%+d%+d" % (s[2], s[3], s[0], s[1]) for s in screens))
+
+
+def screens_from_key(key):
+    """Inverse of layout_key: the (x, y, w, h) screens a saved key was made of.
+
+    Lets a position saved under one arrangement be scaled onto another. Empty on
+    a malformed key, so a bad settings entry never drives a remap off a guess.
+    """
+    out = []
+    for part in key.split("|"):
+        m = _KEY_PART.match(part)
+        if not m:
+            return []
+        w, h, x, y = (int(g) for g in m.groups())
+        out.append((x, y, w, h))
+    return out
+
+
+def source_layout(x, y, layouts):
+    """The layout key whose saved position is (x, y), else None.
+
+    save_layout mirrors every save to the top-level x/y the launch fallback
+    reads, so the arrangement a position was last saved in is the matching one.
+    """
+    for key, geom in layouts.items():
+        if geom.get("x") == x and geom.get("y") == y:
+            return key
+    return None
+
+
+def remap_from_layouts(x, y, width, height, layouts, screens):
+    """Launch-time remap: recover the old screens from saved history and scale.
+
+    For an arrangement seen for the first time (resolution changed or a monitor
+    added/removed while the widget was NOT running). Falls back to a plain clamp
+    when there is no saved history to read a fraction from.
+    """
+    key = source_layout(x, y, layouts)
+    old = screens_from_key(key) if key else []
+    if not old:
+        return clamp(x, y, width, height, screen_at(x, y, screens))
+    return remap(x, y, width, height, old, screens)
