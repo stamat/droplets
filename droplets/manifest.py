@@ -23,13 +23,15 @@ _ENUMS = {
 }
 
 # Runtime state a running droplet writes back (window moved/resized, which
-# screen it lives on, whether the user turned it on). These live in a sibling
-# settings.json, NOT the authored manifest.json, so store updates never clobber
-# the user's placement. Every key is also in manifest_pattern, so its type is
-# validated against that default -- except 'layouts', which is settings-only
-# (see layout()/save_layout()). Author-declared options (see 'options' below)
-# are written here too, and are the only other keys accepted.
-_SETTINGS_KEYS = ("x", "y", "screen", "width", "height", "layouts", "enabled")
+# screen it lives on). These live in a sibling settings.json, NOT the authored
+# manifest.json, so store updates never clobber the user's placement. Every key
+# is also in manifest_pattern, so its type is validated against that default --
+# except 'layouts', which is settings-only (see layout()/save_layout()).
+# Author-declared options (see 'options' below) are written here too, and are
+# the only other keys accepted. (There is deliberately no per-droplet "enabled"
+# flag: whether a droplet autostarts is a list the manager owns, never something
+# a droplet's own file can assert -- see system/manager/main.py.)
+_SETTINGS_KEYS = ("x", "y", "screen", "width", "height", "layouts")
 
 # Geometry keys remembered per display layout inside 'layouts'.
 _LAYOUT_KEYS = ("x", "y", "width", "height")

@@ -10,3 +10,6 @@ dist/
 
 # per-widget settings, local only
 settings.json
+
+# manager's autostart registry, local only
+enabled.json

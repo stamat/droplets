@@ -200,8 +200,12 @@ update to the shipped manifest never clobbers the user's placement.
 | `width` | `300` | window resized (only when `resizable` is `true`) |
 | `height` | `300` | window resized (only when `resizable` is `true`) |
 | `layouts` | `{}` | same as above, kept per monitor arrangement (pywebview backend) |
-| `enabled` | `false` | the user switched the droplet on in the manager |
 | *(your options)* | as declared | the user edited them in the manager (see below) |
+
+There is deliberately **no** `enabled` field here. Whether a droplet autostarts
+is a list the *manager* owns (`system/manager/enabled.json`), never a flag in a
+droplet's own file — otherwise a downloaded droplet could ship `enabled: true`
+and self-start. A `settings.json` carrying `enabled` is rejected on load.
 
 Moves and resizes are debounced (`_SETTLE_DELAY`, 0.5s of stillness) so one drag
 costs one write, at the end of the drag rather than at close.
@@ -296,8 +300,8 @@ droplet after a save so a change takes effect immediately.
 ### Reserved names
 
 An option may not be named after any manifest field or settings key — the whole
-geometry set (`x`, `y`, `width`, `height`, `screen`, `layouts`), `enabled`, and
-every field in the table above. Two reasons: geometry is auto-populated by the
+geometry set (`x`, `y`, `width`, `height`, `screen`, `layouts`) and every field
+in the table above. Two reasons: geometry is auto-populated by the
 running window and an option of the same name would fight it, and `settings.json`
 is user-editable, so an option called `origin` or `allowed_methods` would be a
 way to rewrite the security tier from outside the authored manifest. The loader
@@ -310,11 +314,16 @@ rejects the manifest with `option 'x' is a reserved name`.
 `system/manager` is itself a droplet (`type: app`, `origin: local`). It lists
 every directory in `apps/` that has a `manifest.json` and shows what the
 manifest declares — icon, title, description, `screenshots`, and a form built
-from `options`. Switching a droplet on spawns `droplets.py <dir>` as its own
-process; switching it off signals that process. What is running is read from the
-process table, so a droplet closed from its own context menu shows as off.
+from `options`. Switching a droplet on spawns `droplets.py <dir>` as a child of
+the manager; switching it off (or quitting the manager) terminates it. What is
+running is read from the process table, so a droplet closed from its own context
+menu shows as off — and that manual close also drops it from the autostart list,
+so it is not brought back next launch.
 
-`enabled` records the user's choice for later; replay it at login with:
+The set of droplets to autostart is a list the manager owns
+(`system/manager/enabled.json`), **not** a flag in each droplet's file — a
+droplet cannot enable itself. On launch the manager restarts everything on that
+list; the same list drives a login item:
 
 ```sh
 python3 system/manager/main.py --autostart

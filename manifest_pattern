@@ -8,7 +8,6 @@
 	"icon": [null, 0],
 	"screenshots": [[], 0],
 	"options": [{}, 0],
-	"enabled": [false, 0],
 	"menubar": [false, 0],
 	"executable": ["main", 0],
 	"origin": ["local", 0],

@@ -14,8 +14,13 @@ Which droplets are actually running is still read back from the process table,
 so a droplet that exits on its own (closed from its context menu, or crashed)
 shows as off, and one already running is never double-spawned.
 
-The `enabled` flag in each droplet's settings.json is what survives a full
-quit: on the next launch `autostart()` re-runs everything that was on.
+Which droplets are enabled (autostart on the next launch) is a list the manager
+owns -- `enabled.json`, next to this file -- NOT a flag in each droplet's own
+settings.json. That is on purpose and is a security boundary: a droplet is a
+directory a user can download and drop into apps/, and if "enabled" lived in its
+own file, a hostile droplet could ship `enabled: true` and self-start on the
+next launch without the user ever choosing to run it. Only the manager writes
+enabled.json, so nothing runs at startup that the user did not turn on here.
 
 ponytail: process lookup shells out to `ps`, so this half is POSIX only. The
 GTK and pywebview backends both run on Windows; if the manager needs to, the
@@ -35,6 +40,9 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 APPS = os.path.join(ROOT, "apps")
 LAUNCHER = os.path.join(ROOT, "droplets.py")
+# The manager's own autostart registry: the list of droplets it may launch at
+# startup. Manager-owned so a droplet can't enable itself (see module docstring).
+ENABLED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "enabled.json")
 
 sys.path.insert(0, ROOT)
 
@@ -136,6 +144,7 @@ def droplets():
     """Every droplet in apps/, with what the manager needs to render it."""
     _reap()
     table = _running_pids()
+    enabled = _enabled_set()
     listing = []
     for name in sorted(os.listdir(APPS)):
         path = os.path.join(APPS, name)
@@ -159,7 +168,9 @@ def droplets():
                 "has_screenshots": bool(manifest.screenshots),
                 "options": manifest.options,
                 "values": manifest.option_values(),
-                "enabled": bool(manifest.enabled),
+                # Enabled is the manager's own list, not manifest.enabled -- a
+                # droplet doesn't get to say it should autostart (see docstring).
+                "enabled": name in enabled,
                 "running": bool(_pids_for(path, table)),
             }
         )
@@ -190,10 +201,30 @@ def _terminate(proc):
         proc.kill()
 
 
-def _write_enabled(name, value):
-    """Persist a droplet's on/off intent to its settings.json."""
-    manifest = Manifest(os.path.join(_dir_for(name), "manifest.json"))
-    manifest.save_setting(enabled=bool(value))
+def _enabled_set():
+    """The manager's set of enabled droplet names, tolerant of a missing/bad file.
+
+    A corrupt registry means "nothing is enabled" rather than a crash on launch:
+    the cost is the user re-enabling widgets, never a failure to start or a
+    droplet running that shouldn't.
+    """
+    try:
+        with open(ENABLED_FILE) as f:
+            names = json.load(f)
+    except (OSError, ValueError):
+        return set()
+    return set(names) if isinstance(names, list) else set()
+
+
+def _set_enabled(name, value):
+    """Add or remove a droplet from the manager's autostart registry."""
+    names = _enabled_set()
+    if value:
+        names.add(name)
+    else:
+        names.discard(name)
+    with open(ENABLED_FILE, "w") as f:
+        json.dump(sorted(names), f, indent=4)
 
 
 def _reap():
@@ -211,7 +242,7 @@ def _reap():
     for name, proc in list(_children.items()):
         if proc.poll() is not None:
             del _children[name]
-            _write_enabled(name, False)
+            _set_enabled(name, False)
 
 
 def start(name):
@@ -260,17 +291,18 @@ def terminate_all():
         if proc.poll() is None:
             _terminate(proc)
         else:
-            _write_enabled(name, False)
+            _set_enabled(name, False)
 
 
 def set_enabled(name, enabled):
     """Turn a droplet on or off: run/stop it now, and remember the choice.
 
-    The stored flag is what autostart replays next launch; `running` is the live
-    truth, which is why the manager reads both. A later manual close clears the
-    flag again (see _reap), so "on" only survives while the user leaves it on.
+    The registry entry is what autostart replays next launch; `running` is the
+    live truth, which is why the manager reads both. A later manual close clears
+    the entry again (see _reap), so "on" only survives while the user leaves it on.
     """
-    _write_enabled(name, enabled)
+    _dir_for(name)  # reject a bogus name before it reaches the registry or a spawn
+    _set_enabled(name, enabled)
     return start(name) if enabled else stop(name)
 
 
@@ -293,17 +325,30 @@ def set_options(name, values):
 
 
 def autostart():
-    """Start every droplet the user left switched on.
+    """Start every droplet in the manager's enabled registry.
 
     Called on manager launch (the front-end fires it on boot) so the widgets
     that were on last session come back, and also usable standalone as a login
     item via `main.py --autostart`.
+
+    Names are checked against apps/ as we go and the registry is pruned to what
+    still exists -- so a droplet that was deleted can't leave an entry behind
+    that later autostarts a different droplet dropped in under the same name.
     """
-    started = []
-    for entry in droplets():
-        if entry.get("enabled") and not entry.get("running"):
-            start(entry["name"])
-            started.append(entry["name"])
+    started, valid = [], set()
+    table = _running_pids()
+    for name in sorted(_enabled_set()):
+        try:
+            path = _dir_for(name)
+        except ValueError:
+            continue  # directory gone or name bogus -> drop it (not added to valid)
+        valid.add(name)
+        if not _pids_for(path, table):
+            start(name)
+            started.append(name)
+    if valid != _enabled_set():
+        with open(ENABLED_FILE, "w") as f:
+            json.dump(sorted(valid), f, indent=4)
     return started
 
 

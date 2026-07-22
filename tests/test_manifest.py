@@ -205,7 +205,7 @@ def test_geometry_and_manifest_names_rejected_as_options():
     # The blacklist: an option may not claim a geometry key (it would fight the
     # window) or any manifest field (settings.json is user-editable, so an
     # option named `origin`/`allowed_methods` would be a way around the tier).
-    for name in ("x", "y", "width", "height", "screen", "layouts", "enabled",
+    for name in ("x", "y", "width", "height", "screen", "layouts",
                  "origin", "allowed_methods", "options"):
         with tempfile.TemporaryDirectory() as d:
             path = _write(d, "manifest.json", {
@@ -276,13 +276,19 @@ def test_bad_option_values_rejected():
                 raise AssertionError("settings.json accepted %r" % values)
 
 
-def test_enabled_is_a_setting():
+def test_no_per_droplet_enabled_flag():
+    # Autostart is the manager's own registry, never a flag a droplet's own file
+    # can set (a downloaded droplet must not be able to self-start). So "enabled"
+    # is not a settings key: a settings.json carrying it is rejected.
     with tempfile.TemporaryDirectory() as d:
         _write(d, "manifest.json", {"width": 1, "height": 1})
-        m = Manifest(os.path.join(d, "manifest.json"))
-        assert m.enabled is False           # nothing runs until the user says so
-        m.save_setting(enabled=True)
-        assert Manifest(os.path.join(d, "manifest.json")).enabled is True
+        _write(d, "settings.json", {"enabled": True})
+        try:
+            Manifest(os.path.join(d, "manifest.json"))
+        except ValueError as e:
+            assert "enabled" in str(e)
+        else:
+            raise AssertionError("settings.json 'enabled' should be rejected")
 
 
 def test_shipped_manifests_are_valid():
@@ -313,6 +319,6 @@ if __name__ == "__main__":
     test_geometry_and_manifest_names_rejected_as_options()
     test_bad_option_schema_rejected()
     test_bad_option_values_rejected()
-    test_enabled_is_a_setting()
+    test_no_per_droplet_enabled_flag()
     test_shipped_manifests_are_valid()
     print("ok")
