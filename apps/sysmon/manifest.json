@@ -1,0 +1,18 @@
+{
+    "title": "System Monitor",
+    "description": "CPU, memory, disk and network usage on macOS and Linux",
+    "type": "widget",
+    "origin": "local",
+    "allowed_methods": ["stats"],
+    "width": 200,
+    "height": 210,
+    "shape": "roundedrect",
+    "corner_radius": 10,
+    "transparent": true,
+    "decorated": false,
+    "drag": true,
+    "stick": true,
+    "below": true,
+    "skip_taskbar": true,
+    "skip_pager": true
+}
