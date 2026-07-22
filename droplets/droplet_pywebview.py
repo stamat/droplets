@@ -25,8 +25,10 @@ pywebview hands us (see `_apply_native_macos`); on Windows they stay dropped.
 skip-taskbar/pager is an app-bundle setting (LSUIElement), not a runtime call.
 """
 
+import collections
 import json
 import os
+import re
 import sys
 import threading
 import urllib.request
@@ -119,10 +121,10 @@ def _top_left_point(x, y, screens):
 def _clamp_on_screen(x, y, width, height, screens):
     """Pull a window rect fully onto the display it lands on.
 
-    Applied to every position that was not saved for the current arrangement: a
-    manifest x/y authored on someone else's larger display, or coordinates left
-    over from a display that is no longer attached. Trusting those is what opens
-    a widget mostly (or entirely) off screen on its first run.
+    The last-resort backstop after _remap_position (or the only step when there
+    is no history to remap from): a manifest x/y authored on someone else's
+    larger display, or coordinates left over from a display that is no longer
+    attached. Trusting those is what opens a widget off screen on its first run.
 
     x is global while y is measured down from its own screen's top edge (see
     _screen_for), so the two axes clamp against different frames.
@@ -132,6 +134,83 @@ def _clamp_on_screen(x, y, width, height, screens):
         min(max(x, s.x), max(s.x, s.x + s.width - width)),
         min(max(y, _TOP_MARGIN), max(_TOP_MARGIN, s.height - height)),
     )
+
+
+# A screen recovered from a layout key: same x/y/width/height a webview Screen
+# exposes, which is all the geometry helpers touch.
+_Rect = collections.namedtuple("_Rect", "x y width height")
+_KEY_PART = re.compile(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$")
+
+
+def _screens_from_key(key):
+    """Inverse of _layout_key: the screens a saved arrangement was made of.
+
+    Lets a position saved under one arrangement be re-placed under another --
+    the old screen sizes are the only extra thing the remap needs, and the key
+    already carries them. Empty on a malformed key (never remap off a guess).
+    """
+    screens = []
+    for part in key.split("|"):
+        m = _KEY_PART.match(part)
+        if not m:
+            return []
+        w, h, x, y = (int(g) for g in m.groups())
+        screens.append(_Rect(x, y, w, h))
+    return screens
+
+
+def _source_layout(x, y, layouts):
+    """The layout key whose saved position is (x, y).
+
+    save_layout mirrors every save to the top-level x/y the fallback reads, so
+    the arrangement a position was last saved in is the one whose entry matches.
+    None when nothing does (nothing saved yet -> no history to remap from).
+    """
+    for key, geom in layouts.items():
+        if geom.get("x") == x and geom.get("y") == y:
+            return key
+    return None
+
+
+def _nearest_screen(rect, screens):
+    """The current screen whose centre is closest to `rect`'s centre.
+
+    Maps an old screen to its counterpart now: a display left untouched while
+    another changed is still nearest itself, so a widget on it stays put; the
+    survivor of an unplug is nearest the display that is gone.
+    """
+    cx, cy = rect.x + rect.width / 2, rect.y + rect.height / 2
+    return min(
+        screens,
+        key=lambda s: (s.x + s.width / 2 - cx) ** 2 + (s.y + s.height / 2 - cy) ** 2,
+    )
+
+
+def _remap_position(x, y, width, height, layouts, screens):
+    """Keep a widget at ~the same relative spot when the display setup changed.
+
+    Fired for an arrangement seen for the first time (resolution changed, or a
+    monitor added/removed): recover the widget's fractional place on the screen
+    it was last saved on, then drop it at that same fraction of the matching
+    current screen. Falls back to a plain clamp when there is no saved history to
+    read a fraction from (a first-ever run off the authored manifest x/y).
+
+    ponytail: matches the source arrangement by (x, y) equality; two arrangements
+    saved at the identical spot are indistinguishable, and either is fine to
+    scale from. A per-layout save timestamp is the upgrade path if it ever bites.
+    """
+    key = _source_layout(x, y, layouts)
+    old_screens = _screens_from_key(key) if key else []
+    if not old_screens:
+        return _clamp_on_screen(x, y, width, height, screens)
+
+    old = _screen_for(x, y, old_screens)
+    new = _nearest_screen(old, screens)
+    fx = (x - old.x) / old.width
+    fy = y / old.height
+    nx = new.x + round(fx * new.width)
+    ny = round(fy * new.height)
+    return _clamp_on_screen(nx, ny, width, height, screens)
 
 
 class _Api:
@@ -309,10 +388,15 @@ class Droplet:
         self._pending_move = None
         if x is not None and y is not None:
             if "x" not in saved:
-                # Not saved for this arrangement -> authored for an unknown
-                # display, or left over from one that is gone. Trusting it is
-                # what opens a widget off screen on first run.
-                x, y = _clamp_on_screen(x, y, width, height, webview.screens)
+                # Not saved for this arrangement -> the display setup changed
+                # (resolution, or a monitor added/removed) since this position was
+                # stored, or it is an authored manifest x/y. Re-place it at the
+                # same relative spot on the current screens; _remap_position falls
+                # back to a plain clamp when there is no history to scale from.
+                x, y = _remap_position(
+                    x, y, width, height,
+                    manifest.settings.get("layouts", {}), webview.screens,
+                )
             self._pending_move = (x, y)
             self.temp["x"], self.temp["y"] = x, y
 

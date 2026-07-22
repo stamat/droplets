@@ -13,7 +13,9 @@ from droplets.droplet_pywebview import (  # noqa: E402
     Droplet,
     _clamp_on_screen,
     _layout_key,
+    _remap_position,
     _screen_for,
+    _screens_from_key,
     _top_left_point,
 )
 
@@ -50,6 +52,53 @@ def test_top_of_the_screen_leaves_room_for_the_menu_bar():
 
 def test_widget_larger_than_its_display_starts_at_the_corner():
     assert _clamp_on_screen(400, 400, 3000, 3000, LAPTOP_ONLY) == (0, _TOP_MARGIN)
+
+
+# ---- proportional remap when the display setup changes -------------------
+
+def _remap(x, y, w, h, layouts, screens):
+    """_remap_position with the layout dict keyed by a real _layout_key, the way
+    settings.json stores it (the key is what carries the old screen sizes)."""
+    return _remap_position(x, y, w, h, layouts, screens)
+
+
+def test_screens_from_key_roundtrips_a_layout_key():
+    got = _screens_from_key(_layout_key(BOTH))
+    assert [(s.x, s.y, s.width, s.height) for s in got] == [
+        (0, 0, 1512, 982),  # sorted key order ("1512..." < "2560..."), not BOTH's
+        (-2560, 0, 2560, 1440),
+    ]
+
+
+def test_no_history_falls_back_to_clamp():
+    # Authored manifest x/y, never saved: behaves exactly like the clamp.
+    assert _remap(1167, 75, 140, 140, {}, [_Screen(0, 0, 1280, 800)]) == (1140, 75)
+
+
+def test_resolution_shrink_keeps_the_relative_spot():
+    # Saved dead-centre on a 2560x1440, then that display drops to 1280x720.
+    big, small = _layout_key([_Screen(0, 0, 2560, 1440)]), [_Screen(0, 0, 1280, 720)]
+    layouts = {big: {"x": 1210, "y": 650}}  # ~centre of the 2560 (minus half a 140 widget)
+    x, y = _remap(1210, 650, 140, 140, layouts, small)
+    assert (x, y) == (605, 325)  # ~centre of the 1280, not clamped to an edge
+
+
+def test_unplugging_the_external_moves_the_widget_onto_the_laptop():
+    # Widget parked near the right of a left-hand 2560 external; external unplugged.
+    docked = _layout_key(BOTH)
+    layouts = {docked: {"x": -400, "y": 100}}
+    x, y = _remap(-400, 100, 140, 140, layouts, LAPTOP_ONLY)
+    # -400 is 2160/2560 across the external -> same fraction of the 1512 laptop.
+    assert (x, y) == (round((2160 / 2560) * 1512), round((100 / 1440) * 982))
+
+
+def test_untouched_screen_keeps_the_widget_put_when_another_changes():
+    # Two screens; only the external's resolution changes. The widget lives on the
+    # laptop, which is unchanged -> nearest itself -> its exact spot is preserved.
+    before = _layout_key([_Screen(0, 0, 1512, 982), _Screen(-2560, 0, 2560, 1440)])
+    after = [_Screen(0, 0, 1512, 982), _Screen(-1920, 0, 1920, 1080)]
+    layouts = {before: {"x": 1300, "y": 40}}
+    assert _remap(1300, 40, 140, 140, layouts, after) == (1300, 40)
 
 
 class _Manifest:
@@ -219,6 +268,11 @@ if __name__ == "__main__":
     test_authored_position_pulled_onto_a_smaller_display()
     test_top_of_the_screen_leaves_room_for_the_menu_bar()
     test_widget_larger_than_its_display_starts_at_the_corner()
+    test_screens_from_key_roundtrips_a_layout_key()
+    test_no_history_falls_back_to_clamp()
+    test_resolution_shrink_keeps_the_relative_spot()
+    test_unplugging_the_external_moves_the_widget_onto_the_laptop()
+    test_untouched_screen_keeps_the_widget_put_when_another_changes()
     test_drag_writes_settings_once_at_the_end()
     test_two_drags_write_once_each()
     test_close_mid_drag_flushes_pending_position()
