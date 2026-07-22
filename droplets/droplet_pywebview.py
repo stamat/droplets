@@ -28,6 +28,7 @@ skip-taskbar/pager is an app-bundle setting (LSUIElement), not a runtime call.
 import json
 import os
 import sys
+import threading
 import urllib.request
 
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
@@ -63,6 +64,11 @@ _BRIDGE_SHIM = (
 )
 _BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + "</script>"
 
+# Seconds of stillness that count as "the drag is over". Cocoa's windowDidMove_
+# fires on every frame of a drag (easy_drag included), and pywebview has no
+# drag-end event, so geometry is written once the stream goes quiet.
+_SETTLE_DELAY = 0.5
+
 
 def _rect_on_screen(x, y, width, height, screens):
     """True when the window rect overlaps any attached display.
@@ -97,6 +103,7 @@ class Droplet:
         self.path = None
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
+        self._save_timer = None
 
         self.init_widget(path, custom_manifest)
         # debug=True turns on developer extras -> right-click "Inspect Element".
@@ -148,11 +155,33 @@ class Droplet:
 
     def on_moved(self, x, y):
         self.temp["x"], self.temp["y"] = int(x), int(y)
+        self._schedule_save()
 
     def on_resized(self, width, height):
         self.temp["width"], self.temp["height"] = int(width), int(height)
+        self._schedule_save()
+
+    def _schedule_save(self):
+        """Debounce the move/resize stream: save once the window settles.
+
+        ponytail: a plain restarting threading.Timer, no event-loop scheduling --
+        save_geometry only touches self.temp/manifest and writes a file, none of
+        which need the UI thread. Timer is cancelled and re-armed per event, so a
+        drag of any length costs exactly one write.
+        """
+        if self._save_timer is not None:
+            self._save_timer.cancel()
+        self._save_timer = threading.Timer(_SETTLE_DELAY, self.save_geometry)
+        self._save_timer.daemon = True
+        self._save_timer.start()
 
     def on_close(self):
+        # A drag that ends by closing the window never settles; flush it now.
+        if self._save_timer is not None:
+            self._save_timer.cancel()
+        self.save_geometry()
+
+    def save_geometry(self):
         """Persist runtime state (position, resized size) to settings.json.
 
         ponytail: no 'screen' here -- pywebview has no cross-platform screen-index
