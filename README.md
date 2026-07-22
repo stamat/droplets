@@ -153,16 +153,21 @@ WKWebView. Selected automatically off Linux; no arbitrary mask API (frameless +
 transparent shaping only), but keep-below/stick/opacity are recovered natively
 through the underlying `NSWindow` (see `droplet_pywebview.py`).
 
-**Requirements:** Python 3 and pywebview:
+**Requirements:** Python 3.12+ and pywebview. With [uv](https://docs.astral.sh/uv/)
+(`brew install uv`) the dependencies come straight from `pyproject.toml`/`uv.lock`:
 
-    pip install pywebview
+    uv sync
 
 pywebview pulls in **pyobjc** (AppKit/Quartz) on macOS automatically — that's
 what the native window flags use, no extra install.
 
 **Run a droplet:**
 
-    python3 droplets.py apps/app-test
+    uv run droplets.py apps/app-test
+
+Without uv, a plain venv works the same: `python3 -m venv .venv && source
+.venv/bin/activate && pip install pywebview`, then `python3 droplets.py
+apps/app-test`.
 
 **Development:** the macOS backend lives entirely in
 `droplets/droplet_pywebview.py`. `backend.py` auto-picks it off Linux; force it
