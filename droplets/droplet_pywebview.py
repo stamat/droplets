@@ -186,14 +186,36 @@ def _nearest_screen(rect, screens):
     )
 
 
+def _rects(screens):
+    """Snapshot the live webview.screens proxy into comparable, stable rects."""
+    return [_Rect(s.x, s.y, s.width, s.height) for s in screens]
+
+
+def _remap_between(x, y, width, height, old_screens, new_screens):
+    """Proportional map of a position from one arrangement onto another.
+
+    x is global, y is screen-relative-down (the Cocoa convention _screen_for and
+    the stored settings both speak), so the two axes scale against different
+    frames. Clamped so rounding or a smaller display can't push it off-screen.
+    """
+    old = _screen_for(x, y, old_screens)
+    new = _nearest_screen(old, new_screens)
+    fx = (x - old.x) / old.width
+    fy = y / old.height
+    nx = new.x + round(fx * new.width)
+    ny = round(fy * new.height)
+    return _clamp_on_screen(nx, ny, width, height, new_screens)
+
+
 def _remap_position(x, y, width, height, layouts, screens):
     """Keep a widget at ~the same relative spot when the display setup changed.
 
-    Fired for an arrangement seen for the first time (resolution changed, or a
-    monitor added/removed): recover the widget's fractional place on the screen
-    it was last saved on, then drop it at that same fraction of the matching
-    current screen. Falls back to a plain clamp when there is no saved history to
-    read a fraction from (a first-ever run off the authored manifest x/y).
+    Launch-time counterpart to the live handler (_on_screens_changed): for an
+    arrangement seen for the first time -- resolution changed or a monitor was
+    added/removed while the widget was NOT running -- recover the fractional
+    place from the screens the position was last saved on. Falls back to a plain
+    clamp when there is no saved history to read a fraction from (a first-ever
+    run off the authored manifest x/y).
 
     ponytail: matches the source arrangement by (x, y) equality; two arrangements
     saved at the identical spot are indistinguishable, and either is fine to
@@ -203,14 +225,7 @@ def _remap_position(x, y, width, height, layouts, screens):
     old_screens = _screens_from_key(key) if key else []
     if not old_screens:
         return _clamp_on_screen(x, y, width, height, screens)
-
-    old = _screen_for(x, y, old_screens)
-    new = _nearest_screen(old, screens)
-    fx = (x - old.x) / old.width
-    fy = y / old.height
-    nx = new.x + round(fx * new.width)
-    ny = round(fy * new.height)
-    return _clamp_on_screen(nx, ny, width, height, screens)
+    return _remap_between(x, y, width, height, old_screens, screens)
 
 
 class _Api:
@@ -234,6 +249,10 @@ class Droplet:
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
         self._save_timer = None
+        # Live screen-change remap (macOS): last-seen layout + the NSNotification
+        # observer token, so it can be diffed against and removed on close.
+        self._screens = None
+        self._screen_observer = None
         # Set only for a `menubar` droplet on macOS (see _install_status_item);
         # their presence is what makes the close button hide instead of quit.
         self._status_item = None
@@ -325,9 +344,17 @@ class Droplet:
             # button would strand the user: the window is gone and the only
             # handle left is a status item belonging to a dead process. Hide
             # instead -- Quit lives in that item's menu. Returning False here
-            # cancels the close (webview.event.Event.set).
+            # cancels the close (webview.event.Event.set). Keep the screen
+            # observer: the widget is still alive, just hidden.
             self.window.hide()
             return False
+
+        # Real close (not a menu-bar hide): drop the screen observer.
+        if self._screen_observer is not None:
+            from Foundation import NSNotificationCenter
+
+            NSNotificationCenter.defaultCenter().removeObserver_(self._screen_observer)
+            self._screen_observer = None
 
     def save_geometry(self):
         """Persist runtime state (position, resized size) to settings.json.
@@ -514,6 +541,49 @@ class Droplet:
             )
         if manifest.menubar:
             self._install_status_item(ns)
+
+        self._observe_screen_changes()
+
+    def _observe_screen_changes(self):
+        """Reposition the widget when the display setup changes while it runs.
+
+        macOS posts NSApplicationDidChangeScreenParameters on any resolution or
+        monitor add/remove; pywebview surfaces no such event, so we observe it
+        natively (same AppKit reach as the window flags). The block runs on the
+        main queue, so _on_screens_changed is already on the main thread. Runs
+        once -- _apply_native_macos fires on `shown`, which fires once.
+        """
+        from AppKit import NSApplication, NSOperationQueue
+        from Foundation import NSNotificationCenter
+
+        self._screens = _rects(webview.screens)
+        self._screen_observer = NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+            "NSApplicationDidChangeScreenParametersNotification",
+            NSApplication.sharedApplication(),
+            NSOperationQueue.mainQueue(),
+            lambda note: self._on_screens_changed(),
+        )
+
+    def _on_screens_changed(self):
+        # The notification also fires for colour-profile/brightness changes, so
+        # diff the geometry and do nothing when it did not actually change.
+        new = _rects(webview.screens)
+        old, self._screens = self._screens, new
+        if not old or not new or old == new:
+            return
+
+        # The arrangement changed -> so did its fingerprint; save under the new
+        # one from here on (see save_geometry).
+        self.layout_key = _layout_key(webview.screens)
+        width = self.temp.get("width", self.manifest.width)
+        height = self.temp.get("height", self.manifest.height)
+        x, y = _remap_between(self.temp["x"], self.temp["y"], width, height, old, new)
+        if (x, y) == (self.temp["x"], self.temp["y"]):
+            return
+        self.temp["x"], self.temp["y"] = x, y
+        self._pending_move = (x, y)
+        self._restore_position()  # already main-thread; sets the NSWindow frame
+        self._schedule_save()
 
     def _install_status_item(self, ns):
         """Put the droplet in the macOS menu bar, with a show/hide + quit menu.

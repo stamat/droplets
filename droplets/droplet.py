@@ -22,6 +22,7 @@ except ValueError:  # older distros ship the libsoup2 build
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, WebKit2  # noqa: E402
 
 from . import csp  # noqa: E402
+from . import geometry  # noqa: E402
 from .backend import debug_enabled  # noqa: E402
 from .manifest import Manifest  # noqa: E402
 
@@ -46,6 +47,8 @@ class Droplet:
         self.temp = {"x": 0, "y": 0}
         self.drag_handler_id = None
         self.root_url = None
+        # Monitor layout last seen, to diff against on a monitors-changed signal.
+        self._screens = None
 
         self.init_widget(path, custom_manifest)
         Gtk.main()
@@ -139,6 +142,39 @@ class Droplet:
             min(max(x, area.x), max(area.x, area.x + area.width - width)),
             min(max(y, area.y), max(area.y, area.y + area.height - height)),
         )
+
+    @staticmethod
+    def _monitor_rects():
+        """Current monitors as (x, y, width, height) tuples, global X11 coords."""
+        display = Gdk.Display.get_default()
+        return [
+            (g.x, g.y, g.width, g.height)
+            for g in (
+                display.get_monitor(i).get_geometry()
+                for i in range(display.get_n_monitors())
+            )
+        ]
+
+    def _on_monitors_changed(self, screen):
+        """Reposition the widget when the display setup changes while it runs.
+
+        GdkScreen fires monitors-changed / size-changed on any resolution or
+        monitor add/remove. We hold the previous layout in self._screens, so at
+        this point we have both old and new and can remap proportionally -- no
+        stored per-arrangement history needed (that's what the always-running
+        signal buys over the launch-time clamp).
+        """
+        new = self._monitor_rects()
+        old, self._screens = self._screens, new
+        if not old or not new or old == new or self.window is None:
+            return
+        width, height = self.window.get_size()
+        cx, cy = self.window.get_position()
+        nx, ny = geometry.remap(cx, cy, width, height, old, new)
+        if (nx, ny) != (cx, cy):
+            self.window.move(nx, ny)
+            self.temp["x"], self.temp["y"] = nx, ny
+            self.on_focus_out()  # persist the new spot
 
     def on_configure(self, w, e):
         self.temp["x"], self.temp["y"] = w.get_position()
@@ -433,6 +469,12 @@ class Droplet:
 
         if manifest.x is not None and manifest.y is not None:
             window.move(*self._clamp_on_monitor(manifest.x, manifest.y))
+
+        # React live to resolution / monitor changes (see _on_monitors_changed).
+        self._screens = self._monitor_rects()
+        screen = window.get_screen()
+        screen.connect("monitors-changed", self._on_monitors_changed)
+        screen.connect("size-changed", self._on_monitors_changed)
 
         browser.connect("load-changed", self._on_load_changed, manifest.opacity)
 

@@ -7,12 +7,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from droplets import droplet_pywebview  # noqa: E402
+from droplets import droplet_pywebview, geometry  # noqa: E402
 from droplets.droplet_pywebview import (  # noqa: E402
     _TOP_MARGIN,
     Droplet,
     _clamp_on_screen,
     _layout_key,
+    _remap_between,
     _remap_position,
     _screen_for,
     _screens_from_key,
@@ -101,6 +102,61 @@ def test_untouched_screen_keeps_the_widget_put_when_another_changes():
     assert _remap(1300, 40, 140, 140, layouts, after) == (1300, 40)
 
 
+# ---- live remap (mac): both arrangements known, no layouts lookup ---------
+# _remap_between is what the NSApplicationDidChangeScreenParameters handler runs;
+# same screen-relative-y convention, fed old + new screens directly.
+
+def test_live_remap_scales_between_two_known_arrangements():
+    before = [_Screen(0, 0, 2560, 1440)]
+    after = [_Screen(0, 0, 1280, 720)]
+    assert _remap_between(1210, 650, 140, 140, before, after) == (605, 325)
+
+
+def test_live_remap_moves_onto_the_surviving_screen_on_unplug():
+    x, y = _remap_between(-400, 100, 140, 140, BOTH, LAPTOP_ONLY)
+    assert (x, y) == (round((2160 / 2560) * 1512), round((100 / 1440) * 982))
+
+
+# ---- GTK backend: geometry.py, global X11 y (y measured desktop-wide) -----
+# Same scenarios as above, but in the coordinate frame GTK window.move() speaks:
+# y is global, so it scales against (y - screen.y), not y alone.
+
+G_LAPTOP = (0, 0, 1512, 982)
+G_EXTERNAL = (-2560, 0, 2560, 1440)  # to the left, taller, bottom-aligned
+
+
+def test_gtk_no_change_leaves_position_untouched():
+    assert geometry.remap(300, 300, 140, 140, [G_LAPTOP], [G_LAPTOP]) == (300, 300)
+
+
+def test_gtk_resolution_shrink_keeps_relative_spot():
+    assert geometry.remap(1210, 650, 140, 140, [(0, 0, 2560, 1440)], [(0, 0, 1280, 720)]) == (
+        605,
+        325,
+    )
+
+
+def test_gtk_global_y_scales_against_the_screen_origin():
+    # A point 100px below the external's top is global y=100 (external at y=0);
+    # the same fractional drop onto the shorter laptop stays proportional.
+    x, y = geometry.remap(-400, 100, 140, 140, [G_LAPTOP, G_EXTERNAL], [G_LAPTOP])
+    assert (x, y) == (round((2160 / 2560) * 1512), round((100 / 1440) * 982))
+
+
+def test_gtk_clamp_leaves_a_top_margin_and_stays_on_screen():
+    assert geometry.clamp(300, -50, 140, 140, G_LAPTOP) == (300, geometry._TOP_MARGIN)
+    assert geometry.clamp(2000, 900, 140, 140, G_LAPTOP) == (1372, 842)
+
+
+def test_gtk_second_monitor_origin_carries_into_the_result():
+    # Widget on the right-hand external at global x>=1512; a res change there must
+    # keep it on that monitor, not fold it back onto the primary at x~0.
+    before = [(0, 0, 1512, 982), (1512, 0, 2560, 1440)]
+    after = [(0, 0, 1512, 982), (1512, 0, 1920, 1080)]
+    x, y = geometry.remap(1512 + 1280, 720, 140, 140, before, after)
+    assert x >= 1512  # stayed on the external
+
+
 class _Manifest:
     """The fields save_geometry reads, plus real layout()/save_layout() semantics
     over an in-memory settings dict (droplets.manifest owns the file I/O)."""
@@ -132,6 +188,7 @@ def _droplet(manifest, settle=0.05, layout="1512x982+0+0"):
     # No menu-bar item, so on_close saves and lets the window go.
     droplet._status_item = None
     droplet._quitting = False
+    droplet._screen_observer = None
     return droplet
 
 
@@ -273,6 +330,13 @@ if __name__ == "__main__":
     test_resolution_shrink_keeps_the_relative_spot()
     test_unplugging_the_external_moves_the_widget_onto_the_laptop()
     test_untouched_screen_keeps_the_widget_put_when_another_changes()
+    test_live_remap_scales_between_two_known_arrangements()
+    test_live_remap_moves_onto_the_surviving_screen_on_unplug()
+    test_gtk_no_change_leaves_position_untouched()
+    test_gtk_resolution_shrink_keeps_relative_spot()
+    test_gtk_global_y_scales_against_the_screen_origin()
+    test_gtk_clamp_leaves_a_top_margin_and_stays_on_screen()
+    test_gtk_second_monitor_origin_carries_into_the_result()
     test_drag_writes_settings_once_at_the_end()
     test_two_drags_write_once_each()
     test_close_mid_drag_flushes_pending_position()
