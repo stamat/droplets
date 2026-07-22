@@ -70,17 +70,10 @@ _BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + "</script>"
 _SETTLE_DELAY = 0.5
 
 
-def _rect_on_screen(x, y, width, height, screens):
-    """True when the window rect overlaps any attached display.
-
-    ponytail: bounding-box overlap only -- close enough to catch a widget
-    stranded on a display that is gone. Not a coordinate-system conversion: the
-    macOS y-origin flip is irrelevant to whether anything overlaps at all.
-    """
-    return any(
-        x < s.x + s.width and x + width > s.x and y < s.y + s.height and y + height > s.y
-        for s in screens
-    )
+# Room left at the top of a display so a clamped widget doesn't land under the
+# menu bar. ponytail: a constant, because pywebview's Screen carries frame() and
+# not visibleFrame() -- no work area to ask. Raise it if a notch clips a widget.
+_TOP_MARGIN = 25
 
 
 def _layout_key(screens):
@@ -121,6 +114,24 @@ def _top_left_point(x, y, screens):
     which are y-up from the bottom of the primary screen."""
     screen = _screen_for(x, y, screens)
     return x, screen.y + screen.height - y
+
+
+def _clamp_on_screen(x, y, width, height, screens):
+    """Pull a window rect fully onto the display it lands on.
+
+    Applied to every position that was not saved for the current arrangement: a
+    manifest x/y authored on someone else's larger display, or coordinates left
+    over from a display that is no longer attached. Trusting those is what opens
+    a widget mostly (or entirely) off screen on its first run.
+
+    x is global while y is measured down from its own screen's top edge (see
+    _screen_for), so the two axes clamp against different frames.
+    """
+    s = _screen_for(x, y, screens)
+    return (
+        min(max(x, s.x), max(s.x, s.x + s.width - width)),
+        min(max(y, _TOP_MARGIN), max(_TOP_MARGIN, s.height - height)),
+    )
 
 
 class _Api:
@@ -274,15 +285,16 @@ class Droplet:
         # frame is off the main display reports screen() as nil -- pywebview's
         # windowDidMove_ then dies on `window.screen().frame()` (AttributeError).
         # Any x on a secondary display trips it. Moving once the window is shown
-        # keeps second-screen restore working. Skip positions that land on no
-        # attached display at all (a monitor unplugged since the last run),
-        # otherwise the widget restores somewhere invisible.
+        # keeps second-screen restore working. No x/y at all (nothing authored,
+        # nothing saved) leaves the window where pywebview puts it: centred on
+        # the primary display.
         self._pending_move = None
-        if (
-            x is not None
-            and y is not None
-            and _rect_on_screen(x, y, width, height, webview.screens)
-        ):
+        if x is not None and y is not None:
+            if "x" not in saved:
+                # Not saved for this arrangement -> authored for an unknown
+                # display, or left over from one that is gone. Trusting it is
+                # what opens a widget off screen on first run.
+                x, y = _clamp_on_screen(x, y, width, height, webview.screens)
             self._pending_move = (x, y)
             self.temp["x"], self.temp["y"] = x, y
 

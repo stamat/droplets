@@ -123,6 +123,23 @@ class Droplet:
 
     # ---- window geometry persistence ------------------------------------
 
+    def _clamp_on_monitor(self, x, y):
+        """Pull a position fully into the work area of the monitor it lands on.
+
+        A manifest's authored x/y comes from whatever display its author used,
+        and a saved one can point at a monitor that has since been unplugged --
+        either way the widget opens off screen. get_workarea() already excludes
+        panels and docks, so a clamped widget never hides under one.
+        """
+        display = Gdk.Display.get_default()
+        monitor = display.get_monitor_at_point(x, y) or display.get_primary_monitor()
+        area = monitor.get_workarea()
+        width, height = self.window.get_size()
+        return (
+            min(max(x, area.x), max(area.x, area.x + area.width - width)),
+            min(max(y, area.y), max(area.y, area.y + area.height - height)),
+        )
+
     def on_configure(self, w, e):
         self.temp["x"], self.temp["y"] = w.get_position()
 
@@ -411,7 +428,7 @@ class Droplet:
             window.show_all()
 
         if manifest.x is not None and manifest.y is not None:
-            window.move(manifest.x, manifest.y)
+            window.move(*self._clamp_on_monitor(manifest.x, manifest.y))
 
         browser.connect("load-changed", self._on_load_changed, manifest.opacity)
 

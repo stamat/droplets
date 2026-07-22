@@ -1,4 +1,4 @@
-"""Headless tests for offscreen-geometry rejection and drag-end persistence
+"""Headless tests for offscreen-geometry clamping and drag-end persistence
 (no GUI: fake screens, fake manifest, Droplet built without __init__)."""
 
 import os
@@ -9,9 +9,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from droplets import droplet_pywebview  # noqa: E402
 from droplets.droplet_pywebview import (  # noqa: E402
+    _TOP_MARGIN,
     Droplet,
+    _clamp_on_screen,
     _layout_key,
-    _rect_on_screen,
     _screen_for,
     _top_left_point,
 )
@@ -27,17 +28,28 @@ BOTH = [_Screen(-2560, 0, 2560, 1440), _Screen(0, 0, 1512, 982)]
 LAPTOP_ONLY = [_Screen(0, 0, 1512, 982)]
 
 
-def test_position_kept_while_its_display_is_attached():
-    assert _rect_on_screen(-1393, 75, 140, 140, BOTH)
+def test_position_untouched_while_its_display_is_attached():
+    assert _clamp_on_screen(-1393, 75, 140, 140, BOTH) == (-1393, 75)
 
 
-def test_position_dropped_once_that_display_is_gone():
-    assert not _rect_on_screen(-1393, 75, 140, 140, LAPTOP_ONLY)
+def test_position_pulled_back_once_that_display_is_gone():
+    # The left display is unplugged: land on the primary instead of nowhere.
+    assert _clamp_on_screen(-1393, 75, 140, 140, LAPTOP_ONLY) == (0, 75)
 
 
-def test_onscreen_and_partially_onscreen_positions_kept():
-    assert _rect_on_screen(1167, 75, 140, 140, LAPTOP_ONLY)
-    assert _rect_on_screen(-70, 75, 140, 140, LAPTOP_ONLY)
+def test_authored_position_pulled_onto_a_smaller_display():
+    # manifest.json x/y authored on a wider screen: right/bottom edges win.
+    small = [_Screen(0, 0, 1280, 800)]
+    assert _clamp_on_screen(1167, 75, 140, 140, small) == (1140, 75)
+    assert _clamp_on_screen(300, 780, 140, 140, small) == (300, 660)
+
+
+def test_top_of_the_screen_leaves_room_for_the_menu_bar():
+    assert _clamp_on_screen(300, 0, 140, 140, LAPTOP_ONLY) == (300, _TOP_MARGIN)
+
+
+def test_widget_larger_than_its_display_starts_at_the_corner():
+    assert _clamp_on_screen(400, 400, 3000, 3000, LAPTOP_ONLY) == (0, _TOP_MARGIN)
 
 
 class _Manifest:
@@ -199,9 +211,11 @@ def test_redocking_does_not_rewrite_the_position_it_restored():
 
 
 if __name__ == "__main__":
-    test_position_kept_while_its_display_is_attached()
-    test_position_dropped_once_that_display_is_gone()
-    test_onscreen_and_partially_onscreen_positions_kept()
+    test_position_untouched_while_its_display_is_attached()
+    test_position_pulled_back_once_that_display_is_gone()
+    test_authored_position_pulled_onto_a_smaller_display()
+    test_top_of_the_screen_leaves_room_for_the_menu_bar()
+    test_widget_larger_than_its_display_starts_at_the_corner()
     test_drag_writes_settings_once_at_the_end()
     test_two_drags_write_once_each()
     test_close_mid_drag_flushes_pending_position()
