@@ -1,0 +1,10 @@
+[project]
+name = "droplets"
+version = "0.1.0"
+description = "Linux widgets and web GUI frame in Python GTK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyobjc>=12.2.1",
+    "pywebview>=6.2.1",
+]
