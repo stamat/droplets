@@ -311,6 +311,12 @@ class Droplet:
         # still None here -- so the native-only flags go on the `shown` event.
         window.events.shown += self._apply_native_macos
 
+        # A widget is a fixed-size window, so its page must not reserve a
+        # scrollbar gutter (see _hide_scrollbars). `type: app` windows are real
+        # windows and keep theirs.
+        if manifest.type != "app":
+            window.events.loaded += self._hide_scrollbars
+
         if self._pending_move is not None:
             window.events.shown += self._restore_position
         # events.moved / closing exist in pywebview 3.4+; guard for older builds.
@@ -330,7 +336,13 @@ class Droplet:
         # macOS, so no new dependency. No-op on every other platform.
         if sys.platform != "darwin":
             return
-        from AppKit import NSThread, NSFloatingWindowLevel, NSNormalWindowLevel
+        from AppKit import (
+            NSFloatingWindowLevel,
+            NSNormalWindowLevel,
+            NSThread,
+            NSWindowStyleMaskBorderless,
+            NSWindowStyleMaskResizable,
+        )
         from PyObjCTools import AppHelper
 
         # pywebview fires window events on a worker thread; AppKit setters are
@@ -347,6 +359,20 @@ class Droplet:
             return
 
         manifest = self.manifest
+        if not manifest.decorated:
+            # macOS rounds the corners of every titled window, and pywebview
+            # keeps NSTitledWindowMask even for frameless ones (it only adds
+            # NSFullSizeContentView on top and hides the buttons). So the
+            # widget's own shape -- CSS border-radius, PNG alpha -- ends up
+            # clipped by a second rectangle rounded to the system's radius
+            # rather than the manifest's. A borderless mask drops the theme
+            # frame entirely (NSThemeFrame -> NSNextStepFrame) and the rounding
+            # with it. The resizable bit is kept: borderless windows lose
+            # edge-resizing otherwise, and it does not bring the rounding back.
+            ns.setStyleMask_(
+                NSWindowStyleMaskBorderless
+                | (NSWindowStyleMaskResizable if manifest.resizable else 0)
+            )
         if manifest.below:
             # ponytail: one level under normal, NOT kCGDesktopWindowLevel. At the
             # true desktop level the window sits beneath Finder's desktop-icon
@@ -361,6 +387,29 @@ class Droplet:
             ns.setCollectionBehavior_((1 << 0) | (1 << 4))
         if manifest.opacity is not None and manifest.opacity < 1:
             ns.setAlphaValue_(manifest.opacity)
+
+    def _hide_scrollbars(self):
+        """Take the main-frame scrollbar off a widget's page.
+
+        macOS scrollbars set to "Automatic" (the default) means legacy,
+        non-overlay scrollbars whenever a mouse is attached, and WebKit then
+        reserves a permanent 17px gutter for them. Two things go wrong at once
+        on a transparent frameless widget: the page lays out 17px narrower than
+        the window it was authored for (measured: clientWidth 203 in a 220px
+        window), and the scrollbar track paints an opaque light strip down the
+        side of a widget that is otherwise transparent -- which reads as a white
+        rectangle sticking out from behind the widget.
+
+        ponytail: overflow on documentElement is the only thing that gives the
+        gutter back. ::-webkit-scrollbar rules style the thumb but the main
+        frame keeps reserving the space (measured: clientWidth stays 203).
+        Elements with their own overflow still scroll; only the window-level
+        scroll goes, which a fixed-size widget never wanted.
+
+        Runs on `loaded` so it re-applies on every navigation. Not darwin-gated:
+        WebView2 reserves the same gutter.
+        """
+        self.window.evaluate_js("document.documentElement.style.overflow = 'hidden'")
 
     def _restore_position(self):
         """Put the window back where it was, in the coordinates it was saved in.
