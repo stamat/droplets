@@ -7,3 +7,6 @@ venv/
 *.egg-info/
 build/
 dist/
+
+# per-widget settings, local only
+settings.json
