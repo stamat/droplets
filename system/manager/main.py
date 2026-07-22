@@ -134,6 +134,7 @@ def _pids_for(path, table=None):
 
 def droplets():
     """Every droplet in apps/, with what the manager needs to render it."""
+    _reap()
     table = _running_pids()
     listing = []
     for name in sorted(os.listdir(APPS)):
@@ -189,6 +190,30 @@ def _terminate(proc):
         proc.kill()
 
 
+def _write_enabled(name, value):
+    """Persist a droplet's on/off intent to its settings.json."""
+    manifest = Manifest(os.path.join(_dir_for(name), "manifest.json"))
+    manifest.save_setting(enabled=bool(value))
+
+
+def _reap():
+    """Switch off any child that closed on its own, so autostart won't revive it.
+
+    A droplet the manager launched but did not stop -- the user closed it from
+    its own context menu, or it crashed -- is the user saying "off". Clearing
+    `enabled` here is what makes that stick across a manager quit: otherwise the
+    flag stays on and the next launch's autostart brings the widget back.
+
+    Only children still tracked reach this: stop() and terminate_all() pop what
+    the manager itself takes down, so a manager-initiated exit never looks like a
+    manual close.
+    """
+    for name, proc in list(_children.items()):
+        if proc.poll() is not None:
+            del _children[name]
+            _write_enabled(name, False)
+
+
 def start(name):
     """Launch a droplet as a child of the manager, unless it's already running."""
     path = _dir_for(name)
@@ -219,6 +244,11 @@ def stop(name):
 def terminate_all():
     """Stop every droplet the manager started. Runs when the manager quits.
 
+    A child still alive is taken down *by the quit* and keeps its `enabled` flag,
+    so autostart brings it back next launch. A child already gone was closed by
+    the user in the gap since the last poll -- treat it like _reap and switch it
+    off, so a manual close right before quitting is still remembered as off.
+
     ponytail: only the manager's own children. A widget started by hand outlives
     it -- there is no handle to it, and the request was to own what the manager
     launched, not to sweep the machine. A manager killed with SIGKILL can't run
@@ -226,18 +256,21 @@ def terminate_all():
     from becoming duplicates.
     """
     for name in list(_children):
-        _terminate(_children.pop(name))
+        proc = _children.pop(name)
+        if proc.poll() is None:
+            _terminate(proc)
+        else:
+            _write_enabled(name, False)
 
 
 def set_enabled(name, enabled):
     """Turn a droplet on or off: run/stop it now, and remember the choice.
 
-    The stored flag is what `--autostart` replays at login; `running` is the
-    live truth, which is why the manager reads both.
+    The stored flag is what autostart replays next launch; `running` is the live
+    truth, which is why the manager reads both. A later manual close clears the
+    flag again (see _reap), so "on" only survives while the user leaves it on.
     """
-    path = _dir_for(name)
-    manifest = Manifest(os.path.join(path, "manifest.json"))
-    manifest.save_setting(enabled=bool(enabled))
+    _write_enabled(name, enabled)
     return start(name) if enabled else stop(name)
 
 
