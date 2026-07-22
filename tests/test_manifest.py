@@ -291,6 +291,25 @@ def test_no_per_droplet_enabled_flag():
             raise AssertionError("settings.json 'enabled' should be rejected")
 
 
+def test_hosted_source_must_be_absolute_url():
+    # A hosted droplet with an empty/relative source makes pywebview fall back to
+    # its bottle server and crash-loop; reject it at load instead.
+    with tempfile.TemporaryDirectory() as d:
+        for bad in ("", "index.html", "apps/x/", "ftp://x"):
+            path = _write(d, "manifest.json",
+                          {"width": 1, "height": 1, "origin": "hosted", "source": bad})
+            try:
+                Manifest(path)
+            except ValueError as e:
+                assert "hosted 'source'" in str(e), (bad, str(e))
+            else:
+                raise AssertionError("hosted source %r was accepted" % bad)
+        # An absolute http(s) URL is fine.
+        ok = _write(d, "manifest.json",
+                    {"width": 1, "height": 1, "origin": "hosted", "source": "https://example.com/"})
+        assert Manifest(ok).source == "https://example.com/"
+
+
 def test_shipped_manifests_are_valid():
     # Every manifest in the repo must pass validation.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -320,5 +339,6 @@ if __name__ == "__main__":
     test_bad_option_schema_rejected()
     test_bad_option_values_rejected()
     test_no_per_droplet_enabled_flag()
+    test_hosted_source_must_be_absolute_url()
     test_shipped_manifests_are_valid()
     print("ok")

@@ -8,6 +8,7 @@ allowed_methods (a list) — are pinned explicitly below.
 
 import json
 import os
+import re
 
 # Pattern lives at the repo root (one level above this package).
 _DEFAULT_PATTERN = os.path.join(
@@ -182,6 +183,18 @@ class Manifest:
                 errors.append("%r must be a list of strings" % key)
 
         errors.extend(self.validate_options(manifest.get("options", {})))
+
+        # A hosted droplet loads its source as a URL. If it isn't an absolute
+        # http(s) URL (e.g. an empty or relative string), pywebview treats it as
+        # a path, spins up its own bottle server for it, and floods stderr with
+        # `asset() missing ... 'file'` on every request. Catch it here so the
+        # manager shows a broken droplet instead of a launched one crash-looping.
+        if manifest.get("origin") == "hosted":
+            source = manifest.get("source", self.defaults.get("source"))
+            if not (isinstance(source, str) and re.match(r"^https?://", source)):
+                errors.append(
+                    "hosted 'source' must be an absolute http(s):// URL, got %r" % source
+                )
 
         if errors:
             raise ValueError(
