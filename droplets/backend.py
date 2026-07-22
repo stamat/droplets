@@ -7,6 +7,7 @@ platform so `import gi` never runs on macOS and `import webview` never runs on a
 GTK-only Linux box.
 
 Override with the DROPLETS_BACKEND env var ("gtk" or "pywebview").
+DROPLETS_DEBUG=1 opens the widget's web inspector to its author.
 """
 
 import os
@@ -35,6 +36,20 @@ def backend_name(platform=None, env=None):
             )
         return override
     return "gtk" if platform.startswith("linux") else "pywebview"
+
+
+def debug_enabled(env=None):
+    """True when DROPLETS_DEBUG asks for the web inspector.
+
+    Both backends can hand the widget author devtools -- WebKitGTK via
+    `enable-developer-extras`, WKWebView/WebView2 via pywebview's `debug` flag --
+    and both then offer "Inspect Element" on right-click. Off unless asked: a
+    local widget's inspector console can call the Python bridge, so it is exactly
+    the RCE surface droplets/csp.py exists to close.
+    """
+    if env is None:
+        env = os.environ
+    return env.get("DROPLETS_DEBUG", "").lower() not in ("", "0", "false", "no")
 
 
 def get_droplet():

@@ -58,6 +58,42 @@ Add a Python backend only if the widget needs the system — see
 
 ---
 
+## Debugging a droplet
+
+A droplet is a web page, so use the browser's own inspector:
+
+```sh
+DROPLETS_DEBUG=1 python3 droplets.py apps/myclock
+```
+
+Full DOM tree, console, network, JS breakpoints — `console.log` from your widget
+shows up there, not in the terminal. How it opens differs per backend:
+
+| Platform | Inspector |
+|---|---|
+| macOS / Windows | right-click the widget → **Inspect Element** |
+| Linux (GTK) | opens on its own at launch, in its own window |
+
+Linux differs because a widget's right-click is already taken: the droplet's own
+menu (Move/Stick/Deactivate) is bound to it, and the WebKit context menu is
+suppressed unless the manifest sets `default_context_menu`.
+
+The console runs inside your widget, so `droplets.send(...)` is callable from it
+— handy for exercising your `main.py` methods by hand. That is also why it stays
+off by default: for a `local` droplet the inspector is a direct line to the
+Python bridge.
+
+Two things that look like bugs but aren't:
+
+- Errors thrown by the widget go to the inspector console, not the terminal.
+  A blank widget with a clean terminal usually means a JS error on the first
+  line — open the console.
+- On macOS the entry document is a generated `.droplets-entry.html` sibling
+  (the authored HTML plus the CSP meta and the bridge shim), so that is the
+  filename you'll see in the inspector. Edit the authored file, not that one.
+
+---
+
 ## The three origins (tiers)
 
 `origin` decides how much of the world and the system a droplet can touch. It's

@@ -6,10 +6,13 @@ care which one runs:
   - same constructor `Droplet(path, custom_manifest=None)`
   - same JS bridge: widgets call `droplets.send(cmd)` and receive
     `droplets.recieve(result)` (the WebKit2 script-message handler is replaced
-    by pywebview's `js_api`)
+    by pywebview's `js_api`). Only the `local` tier gets the shim -- it is baked
+    into the entry document, and remote/hosted load their URL directly.
+    pywebview exposes no user-script API, and those tiers have no bridge
+    (`recieve` drops their messages), so nothing is lost.
   - same `allowed_methods` gate on module calls (the hybrid-tier allowlist)
   - same per-tier CSP: local widgets get the CSP meta baked in (droplets/csp.py)
-    and are loaded via load_html so remote subresources are blocked
+    so remote subresources are blocked at parse time
 
 What pywebview can't do that GTK can (see PR review): arbitrary pixmap window
 masks (`reshapemask`) have no equivalent — you get frameless + transparent
@@ -29,19 +32,53 @@ import urllib.request
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
 
 from . import csp
+from .backend import debug_enabled
 from .manifest import Manifest
 from .utils import import_from_uri
 
 # JS shim: preserve the widget-facing `droplets.send(cmd)` API but route it
-# through pywebview's js_api instead of WebKit2's messageHandlers. Injected once
-# the pywebview API is live (evaluate_js on the `loaded` event).
+# through pywebview's js_api instead of WebKit2's messageHandlers.
+#
+# It is baked into the entry document (see prepare_widget) rather than
+# evaluate_js'd, because widgets call `droplets.send` from inline script during
+# parse -- the GTK backend injects the same shim at UserScriptInjectionTime.START
+# for exactly that reason. pywebview only creates `window.pywebview.api` on
+# didFinishNavigation, well after parse, so calls made before that are queued
+# here and flushed on `pywebviewready`. Without this the widget's first line
+# throws ReferenceError and the rest of its script never runs.
 _BRIDGE_SHIM = (
     "window.droplets = window.droplets || {};"
+    "droplets._queue = [];"
     "droplets.send = function(cmd) {"
-    "  if (cmd !== undefined && cmd !== null)"
+    "  if (cmd === undefined || cmd === null) return;"
+    "  if (window.pywebview && window.pywebview.api)"
     "    window.pywebview.api.send(String(cmd));"
+    "  else droplets._queue.push(String(cmd));"
     "};"
+    "window.addEventListener('pywebviewready', function() {"
+    "  var q = droplets._queue; droplets._queue = [];"
+    "  q.forEach(function(c) { window.pywebview.api.send(c); });"
+    "});"
 )
+_BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + "</script>"
+
+# Generated entry document, written beside the authored one (see prepare_widget)
+# and removed on close. Dot-prefixed so it stays out of the way of the widget's
+# own files.
+_ENTRY_NAME = ".droplets-entry.html"
+
+
+def _rect_on_screen(x, y, width, height, screens):
+    """True when the window rect overlaps any attached display.
+
+    ponytail: bounding-box overlap only -- close enough to catch a widget
+    stranded on a display that is gone. Not a coordinate-system conversion: the
+    macOS y-origin flip is irrelevant to whether anything overlaps at all.
+    """
+    return any(
+        x < s.x + s.width and x + width > s.x and y < s.y + s.height and y + height > s.y
+        for s in screens
+    )
 
 
 class _Api:
@@ -64,20 +101,12 @@ class Droplet:
         self.path = None
         self.temp = {"x": 0, "y": 0}
         self.root_url = None
-        # For the local tier we load the CSP-injected entry doc via load_html
-        # (needs the GUI live), deferred to _start; see prepare_widget.
-        self._pending_html = None
-        self._pending_base = None
+        # Local tier: path of the generated entry doc, removed on close.
+        self._entry_file = None
 
         self.init_widget(path, custom_manifest)
-        webview.start(self._start)
-
-    def _start(self):
-        # Runs once the GUI is ready. Load the CSP-injected local document with
-        # its own dir as base_uri (file:// origin + relative resources), so the
-        # widget never even briefly shows the un-CSP'd file.
-        if self._pending_html is not None:
-            self.window.load_html(self._pending_html, self._pending_base)
+        # debug=True turns on developer extras -> right-click "Inspect Element".
+        webview.start(debug=debug_enabled())
 
     # ---- JS <-> Python bridge (mirrors the GTK backend) -----------------
 
@@ -144,6 +173,13 @@ class Droplet:
                 changed["width"], changed["height"] = self.temp["width"], self.temp["height"]
         if changed:
             m.save_setting(**changed)
+        if self._entry_file:
+            # ponytail: best effort. A killed process leaves the file behind; the
+            # next run overwrites it, so no staleness to handle.
+            try:
+                os.remove(self._entry_file)
+            except OSError:
+                pass
 
     # ---- window setup ---------------------------------------------------
 
@@ -163,23 +199,47 @@ class Droplet:
             hidden=manifest.hidden,
             js_api=_Api(self),
         )
-        if manifest.x is not None and manifest.y is not None:
-            kwargs["x"], kwargs["y"] = manifest.x, manifest.y
+        # Position is NOT passed to create_window: on macOS pywebview moves the
+        # window while it is still unordered, and an unordered NSWindow whose
+        # frame is off the main display reports screen() as nil -- pywebview's
+        # windowDidMove_ then dies on `window.screen().frame()` (AttributeError).
+        # Any x on a secondary display trips it. Moving once the window is shown
+        # keeps second-screen restore working. Skip positions that land on no
+        # attached display at all (a monitor unplugged since the last run),
+        # otherwise the widget restores somewhere invisible.
+        self._pending_move = None
+        if (
+            manifest.x is not None
+            and manifest.y is not None
+            and _rect_on_screen(
+                manifest.x, manifest.y, manifest.width, manifest.height, webview.screens
+            )
+        ):
+            self._pending_move = (manifest.x, manifest.y)
 
-        # Local tier: enforce the per-tier CSP (see droplets/csp.py). Read the
-        # entry doc, bake in the CSP meta, and defer loading it via load_html
-        # (with the widget dir as base_uri) to _start -- create the window with a
-        # blank placeholder so remote subresources can never load first. Every
-        # other tier loads its URL directly (remote/hosted may reach the web).
+        # Local tier: enforce the per-tier CSP (see droplets/csp.py) by baking the
+        # meta (and the bridge shim) into a generated entry doc, written next to
+        # the authored one and loaded by URL.
+        #
+        # It has to be a real file in the widget's own directory. load_html() maps
+        # to WKWebView's loadHTMLString:baseURL:, which grants the document *no*
+        # read access to that base directory -- every sibling asset (the clock's
+        # background PNG, stylesheets, images) silently fails to load. A file://
+        # URL load has the access; a generated sibling is the only way to get both
+        # that and a CSP the browser sees at parse time.
         if manifest.origin == "local":
             src = os.path.abspath(path + manifest.source)
             with open(src, "r", encoding="utf-8") as f:
-                self._pending_html = csp.inject(f.read(), manifest.origin)
-            self._pending_base = (
-                "file://" + urllib.request.pathname2url(os.path.dirname(src)) + "/"
-            )
-            self.root_url = self._pending_base.rstrip("/")
-            kwargs["html"] = "<!doctype html><title></title>"
+                # Shim first, CSP second: inject_head puts each tag at the top of
+                # <head>, so the meta ends up ahead of the shim script it governs.
+                html = csp.inject_head(f.read(), _BRIDGE_SHIM_TAG)
+                html = csp.inject(html, manifest.origin)
+            entry = os.path.join(os.path.dirname(src), _ENTRY_NAME)
+            with open(entry, "w", encoding="utf-8") as f:
+                f.write(html)
+            self._entry_file = entry
+            self.root_url = "file://" + urllib.request.pathname2url(os.path.dirname(src))
+            kwargs["url"] = self.root_url + "/" + _ENTRY_NAME
         else:
             kwargs["url"] = self._resolve_url(manifest.origin, path + manifest.source)
 
@@ -194,7 +254,8 @@ class Droplet:
 
         self._apply_native_macos(manifest)
 
-        window.events.loaded += self._on_loaded
+        if self._pending_move is not None:
+            window.events.shown += self._restore_position
         # events.moved / closing exist in pywebview 3.4+; guard for older builds.
         if hasattr(window.events, "moved"):
             window.events.moved += self.on_moved
@@ -231,8 +292,8 @@ class Droplet:
         if manifest.opacity is not None and manifest.opacity < 1:
             ns.setAlphaValue_(manifest.opacity)
 
-    def _on_loaded(self):
-        self.window.evaluate_js(_BRIDGE_SHIM)
+    def _restore_position(self):
+        self.window.move(*self._pending_move)
 
     @staticmethod
     def _resolve_url(origin, source):

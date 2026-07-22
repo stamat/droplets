@@ -68,13 +68,13 @@ def meta_tag(origin):
     return '<meta http-equiv="Content-Security-Policy" content="%s">' % policy
 
 
-def inject(html, origin):
-    """Return `html` with the tier's CSP meta as the first thing in <head>.
+def inject_head(html, tag):
+    """Return `html` with `tag` as the first thing in <head>.
 
     Inserted at parse position (right after <head>, else after <html>, else at
-    the top) so the browser enforces it. No-op when the tier has no policy.
+    the top). Also used by the pywebview backend to bake in the JS bridge shim;
+    inject that first so this call puts the CSP meta ahead of it.
     """
-    tag = meta_tag(origin)
     if not tag:
         return html
     m = _HEAD_RE.search(html)
@@ -84,6 +84,15 @@ def inject(html, origin):
     if m:
         return html[: m.end()] + "<head>" + tag + "</head>" + html[m.end() :]
     return tag + html
+
+
+def inject(html, origin):
+    """Return `html` with the tier's CSP meta as the first thing in <head>.
+
+    Inserted at parse position so the browser enforces it. No-op when the tier
+    has no policy.
+    """
+    return inject_head(html, meta_tag(origin))
 
 
 if __name__ == "__main__":

@@ -19,9 +19,10 @@ try:
     gi.require_version("WebKit2", "4.1")
 except ValueError:  # older distros ship the libsoup2 build
     gi.require_version("WebKit2", "4.0")
-from gi.repository import Gdk, GdkPixbuf, Gtk, WebKit2  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, WebKit2  # noqa: E402
 
 from . import csp  # noqa: E402
+from .backend import debug_enabled  # noqa: E402
 from .manifest import Manifest  # noqa: E402
 
 # JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
@@ -327,6 +328,20 @@ class Droplet:
         )
         browser = WebKit2.WebView.new_with_user_content_manager(ucm)
         self.browser = browser
+
+        if debug_enabled():
+            # See backend.debug_enabled. Unlike the pywebview backend we can't
+            # rely on right-click -> "Inspect Element": the WebKit context menu
+            # is suppressed for widgets (see default_context_menu below) and
+            # right-click already pops the droplet's own menu. So open the
+            # inspector outright, and keep it detached -- its default is to dock
+            # inside the web view, which is useless in a 140x140 widget.
+            browser.get_settings().set_enable_developer_extras(True)
+            inspector = browser.get_inspector()
+            inspector.connect("attach", lambda *a: True)
+            # Deferred: at this point the web view isn't realized and the window
+            # hasn't been shown yet (window.show_all() is further down).
+            GLib.idle_add(inspector.show)
 
         window.set_resizable(manifest.resizable)
         window.set_keep_below(manifest.below)

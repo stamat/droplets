@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from droplets.backend import backend_name  # noqa: E402
+from droplets.backend import backend_name, debug_enabled  # noqa: E402
 
 
 def test_platform_defaults():
@@ -29,8 +29,17 @@ def test_unknown_override_raises():
         raise AssertionError("expected SystemExit for unknown backend")
 
 
+def test_debug_is_off_unless_asked():
+    assert not debug_enabled({})
+    assert not debug_enabled({"DROPLETS_DEBUG": "0"})
+    assert not debug_enabled({"DROPLETS_DEBUG": ""})
+    assert debug_enabled({"DROPLETS_DEBUG": "1"})
+    assert debug_enabled({"DROPLETS_DEBUG": "true"})
+
+
 if __name__ == "__main__":
     test_platform_defaults()
     test_env_override_wins_and_is_case_insensitive()
     test_unknown_override_raises()
+    test_debug_is_off_unless_asked()
     print("ok")
