@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>Calendar</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+
+		/* fit_content measures documentElement: keep the root content-sized so
+		   the window shrink-wraps to the card and leaves no invisible overflow
+		   (which a transparent frameless window would still catch drags on). */
+		html { width: max-content; }
+
+		main {
+			font: 11px/1.3 -apple-system, "Segoe UI", Cantarell, sans-serif;
+			background: rgba(18, 18, 22, 0.82);
+			color: #e8e8ea;
+			border-radius: 10px;
+			border: 1px solid rgba(255, 255, 255, 0.09);
+			padding: 10px 12px 12px;
+			display: inline-block;
+			overflow: hidden;
+			-webkit-user-select: none;
+			user-select: none;
+			cursor: default;
+		}
+
+		.head {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			/* Clear of the 16px hover drag-grip in the top-left corner. */
+			margin: 2px 0 8px 8px;
+		}
+
+		.title {
+			font-size: 11px;
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: #c8c8d0;
+			cursor: pointer;
+		}
+
+		.nav {
+			background: none;
+			border: none;
+			color: #7b7b86;
+			font-size: 15px;
+			line-height: 1;
+			cursor: pointer;
+			padding: 2px 7px;
+			border-radius: 5px;
+		}
+		.nav:hover { color: #e8e8ea; background: rgba(255, 255, 255, 0.08); }
+
+		.grid { display: grid; row-gap: 2px; }
+		.grid > div {
+			text-align: center;
+			padding: 3px 0;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.hdr {
+			color: #7b7b86;
+			font-size: 9px;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.day { color: #d0d0d8; }
+		.muted { color: #55555f; }
+		.today {
+			background: #4c8dff;
+			color: #fff;
+			font-weight: 600;
+			border-radius: 6px;
+		}
+		.wk { color: #55555f; font-size: 9px; }
+	</style>
+</head>
+<body>
+
+	<main>
+		<div class="head">
+			<button class="nav" id="prev" title="Previous month">&lsaquo;</button>
+			<div class="title" id="title" title="Jump to today"></div>
+			<button class="nav" id="next" title="Next month">&rsaquo;</button>
+		</div>
+		<div class="grid" id="grid"></div>
+	</main>
+
+	<script>
+		var options = { week_start: 'monday', show_week_numbers: false };
+		var view = startOfMonth(new Date());  // the month currently on screen
+
+		var WD_MON = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+		var WD_SUN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+		var titleFmt = new Intl.DateTimeFormat([], { month: 'long', year: 'numeric' });
+
+		function el(id) { return document.getElementById(id); }
+		function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+		function sameDay(a, b) {
+			return a.getFullYear() === b.getFullYear() &&
+				a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+		}
+
+		// ISO 8601 week number: week 1 holds the year's first Thursday.
+		function isoWeek(d) {
+			var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+			t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7) + 3);  // -> that week's Thursday
+			var firstThu = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+			firstThu.setUTCDate(firstThu.getUTCDate() - ((firstThu.getUTCDay() + 6) % 7) + 3);
+			return 1 + Math.round((t - firstThu) / (7 * 86400000));
+		}
+
+		function cell(text, cls) {
+			var d = document.createElement('div');
+			d.className = cls;
+			d.textContent = text;
+			return d;
+		}
+
+		function render() {
+			var now = new Date();
+			var y = view.getFullYear(), m = view.getMonth();
+			el('title').textContent = titleFmt.format(view);
+
+			var withWeeks = options.show_week_numbers;
+			var grid = el('grid');
+			// Fixed-width columns, not 1fr: fit_content shrinks the body to its
+			// content, so there is no fixed width for fractions to divide.
+			grid.style.gridTemplateColumns = (withWeeks ? '22px ' : '') + 'repeat(7, 26px)';
+			grid.innerHTML = '';
+
+			if (withWeeks) grid.appendChild(cell('', 'hdr wk'));
+			(options.week_start === 'sunday' ? WD_SUN : WD_MON).forEach(function (w) {
+				grid.appendChild(cell(w, 'hdr'));
+			});
+
+			// Back up to the first visible cell (previous month's tail).
+			var firstDow = new Date(y, m, 1).getDay();  // 0=Sun..6=Sat
+			var lead = options.week_start === 'sunday' ? firstDow : (firstDow + 6) % 7;
+			var start = new Date(y, m, 1 - lead);
+
+			// Always 6 rows: the widget keeps a constant height across months.
+			for (var row = 0; row < 6; row++) {
+				var rowStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + row * 7);
+				if (withWeeks) grid.appendChild(cell(isoWeek(rowStart), 'wk'));
+				for (var col = 0; col < 7; col++) {
+					var day = new Date(rowStart.getFullYear(), rowStart.getMonth(), rowStart.getDate() + col);
+					var cls = 'day';
+					if (day.getMonth() !== m) cls += ' muted';
+					if (sameDay(day, now)) cls += ' today';
+					grid.appendChild(cell(day.getDate(), cls));
+				}
+			}
+		}
+
+		el('prev').onclick = function () { view.setMonth(view.getMonth() - 1); render(); };
+		el('next').onclick = function () { view.setMonth(view.getMonth() + 1); render(); };
+		el('title').onclick = function () { view = startOfMonth(new Date()); render(); };
+
+		droplets.recieve = function (opts) {
+			if (opts && typeof opts === 'object') options = opts;
+			render();
+		};
+
+		render();
+		// Catch the midnight rollover (and any date change) so "today" stays put.
+		setInterval(render, 60000);
+		droplets.send(JSON.stringify({ method: 'droplet_options', args: {} }));
+	</script>
+
+</body>
+</html>

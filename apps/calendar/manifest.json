@@ -1,0 +1,30 @@
+{
+    "title": "Calendar",
+    "description": "A month calendar with today highlighted and month navigation. Drag it from the hover grip in the top-left corner.",
+    "type": "widget",
+    "origin": "local",
+    "options": {
+        "week_start": {
+            "type": "enum",
+            "label": "Week starts on",
+            "choices": ["monday", "sunday"],
+            "default": "monday"
+        },
+        "show_week_numbers": {
+            "type": "bool",
+            "label": "Show week numbers",
+            "default": false
+        }
+    },
+    "width": 210,
+    "height": 200,
+    "shape": "roundedrect",
+    "corner_radius": 10,
+    "fit_content": true,
+    "transparent": true,
+    "decorated": false,
+    "stick": true,
+    "below": true,
+    "skip_taskbar": true,
+    "skip_pager": true
+}

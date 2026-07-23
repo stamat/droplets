@@ -1,0 +1,59 @@
+{
+    "title": "Digital Clock",
+    "description": "A digital clock with a selectable timezone. Run several side by side for a world-clock wall -- fit_content sizes each one to its own digits.",
+    "type": "widget",
+    "origin": "local",
+    "options": {
+        "timezone": {
+            "type": "enum",
+            "label": "Timezone",
+            "description": "IANA timezone. Local uses the system clock.",
+            "choices": [
+                "Local", "UTC",
+                "Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles",
+                "America/Denver", "America/Chicago", "America/New_York",
+                "America/Sao_Paulo", "Atlantic/Reykjavik", "Europe/London",
+                "Europe/Paris", "Europe/Berlin", "Europe/Madrid",
+                "Europe/Belgrade", "Europe/Athens", "Europe/Moscow",
+                "Asia/Dubai", "Asia/Karachi", "Asia/Kolkata", "Asia/Dhaka",
+                "Asia/Bangkok", "Asia/Shanghai", "Asia/Singapore",
+                "Asia/Tokyo", "Asia/Seoul", "Australia/Sydney",
+                "Pacific/Auckland"
+            ],
+            "default": "Local"
+        },
+        "hour24": {
+            "type": "bool",
+            "label": "24-hour clock",
+            "default": true
+        },
+        "seconds": {
+            "type": "bool",
+            "label": "Show seconds",
+            "default": true
+        },
+        "show_date": {
+            "type": "bool",
+            "label": "Show date",
+            "default": true
+        },
+        "label": {
+            "type": "string",
+            "label": "Label",
+            "description": "Overrides the city name shown above the time. Blank derives it from the timezone.",
+            "default": ""
+        }
+    },
+    "width": 190,
+    "height": 96,
+    "shape": "roundedrect",
+    "corner_radius": 10,
+    "fit_content": true,
+    "transparent": true,
+    "decorated": false,
+    "drag": true,
+    "stick": true,
+    "below": true,
+    "skip_taskbar": true,
+    "skip_pager": true
+}

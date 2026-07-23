@@ -6,7 +6,7 @@
 	<style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 
-		body {
+		main {
 			font: 11px/1.4 -apple-system, "Segoe UI", Cantarell, sans-serif;
 			background: rgba(18, 18, 22, 0.82);
 			color: #e8e8ea;
@@ -59,30 +59,31 @@
 	</style>
 </head>
 <body>
+	<main>
+		<h1>System</h1>
 
-	<h1>System</h1>
+		<div class="metric">
+			<div class="row"><span class="label">CPU</span><span class="value" id="cpu-value">—</span></div>
+			<div class="track"><div class="bar" id="cpu-bar"></div></div>
+			<div class="row"><span class="sub" id="cpu-sub">&nbsp;</span></div>
+		</div>
 
-	<div class="metric">
-		<div class="row"><span class="label">CPU</span><span class="value" id="cpu-value">—</span></div>
-		<div class="track"><div class="bar" id="cpu-bar"></div></div>
-		<div class="row"><span class="sub" id="cpu-sub">&nbsp;</span></div>
-	</div>
+		<div class="metric">
+			<div class="row"><span class="label">Memory</span><span class="value" id="mem-value">—</span></div>
+			<div class="track"><div class="bar" id="mem-bar"></div></div>
+			<div class="row"><span class="sub" id="mem-sub">&nbsp;</span></div>
+		</div>
 
-	<div class="metric">
-		<div class="row"><span class="label">Memory</span><span class="value" id="mem-value">—</span></div>
-		<div class="track"><div class="bar" id="mem-bar"></div></div>
-		<div class="row"><span class="sub" id="mem-sub">&nbsp;</span></div>
-	</div>
+		<div class="metric">
+			<div class="row"><span class="label">Disk</span><span class="value" id="disk-value">—</span></div>
+			<div class="track"><div class="bar" id="disk-bar"></div></div>
+			<div class="row"><span class="sub" id="disk-sub">&nbsp;</span></div>
+		</div>
 
-	<div class="metric">
-		<div class="row"><span class="label">Disk</span><span class="value" id="disk-value">—</span></div>
-		<div class="track"><div class="bar" id="disk-bar"></div></div>
-		<div class="row"><span class="sub" id="disk-sub">&nbsp;</span></div>
-	</div>
-
-	<div class="metric">
-		<div class="row"><span class="label">Network</span><span class="value" id="net-value">—</span></div>
-	</div>
+		<div class="metric">
+			<div class="row"><span class="label">Network</span><span class="value" id="net-value">—</span></div>
+		</div>
+	</main>
 
 	<script>
 		// Set from the manifest's `options` (what the manager edits) before the
