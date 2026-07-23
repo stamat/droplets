@@ -269,8 +269,30 @@ class Droplet:
         self._quitting = False
 
         self.init_widget(path, custom_manifest)
+        # Name the Dock/menu-bar before NSApplication registers with the Dock.
+        self._set_app_name()
         # debug=True turns on developer extras -> right-click "Inspect Element".
         webview.start(debug=debug_enabled())
+
+    def _set_app_name(self):
+        """Rename the menu-bar app menu from `python3.12` to the manifest title.
+
+        A bundle-less Python process shows its executable name. The menu-bar app
+        menu reads CFBundleName off the main bundle's info dictionary, so
+        overwriting that entry renames it. ponytail: mutating the live info dict
+        is the long-standing bundle-less-pyobjc trick (rumps et al). It does NOT
+        reach the Dock tile tooltip or Activity Monitor -- those read
+        LaunchServices' display name, which has no working runtime lever; a real
+        .app bundle with CFBundleName (packaging) is the only fix for those.
+        """
+        if sys.platform != "darwin" or not self.manifest.title:
+            return
+        from Foundation import NSBundle
+
+        bundle = NSBundle.mainBundle()
+        info = bundle and (bundle.localizedInfoDictionary() or bundle.infoDictionary())
+        if info is not None:
+            info["CFBundleName"] = self.manifest.title
 
     # ---- JS <-> Python bridge (mirrors the GTK backend) -----------------
 
@@ -520,6 +542,28 @@ class Droplet:
             return
 
         manifest = self.manifest
+
+        if not manifest.skip_taskbar:
+            # A droplet that keeps its Dock tile runs with the generic Python
+            # icon. Swap in the manifest icon as the Dock tile.
+            # ponytail: setApplicationIconImage_ is the runtime way in -- a real
+            # bundle icon (CFBundleIconFile) needs an .app bundle (packaging),
+            # and an accessory/menubar droplet has no Dock tile to dress anyway.
+            from AppKit import NSApplication, NSImage
+
+            icon = manifest.icon and os.path.join(self.path, manifest.icon)
+            image = NSImage.alloc().initWithContentsOfFile_(icon) if icon else None
+            if image is not None:
+                NSApplication.sharedApplication().setApplicationIconImage_(image)
+
+        # ponytail: the Dock tile tooltip and Activity Monitor read
+        # LaunchServices' display name, which is fixed at app registration and
+        # has no public runtime API. The private lever
+        # (_LSSetApplicationInformationItem / _kLSDisplayNameKey) resolves but
+        # did not take, so it's dropped -- the stable fix is a real .app bundle
+        # with CFBundleName (packaging). The menu-bar app menu IS renamed via
+        # _set_app_name.
+
         if not manifest.decorated:
             # macOS rounds the corners of every titled window, and pywebview
             # keeps NSTitledWindowMask even for frameless ones (it only adds

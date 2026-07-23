@@ -384,6 +384,16 @@ class Droplet:
         self.manifest = manifest
         self.module = module
 
+        # Taskbar / WM_CLASS name: a bundle-less Python process otherwise shows
+        # up as `python3.12`. GTK reads the window's class hint from
+        # g_get_prgname() at realize time, so set it (plus the human-readable
+        # app name some shells prefer) before the window is shown further down.
+        # ponytail: one process per droplet (droplets.py launches a single
+        # Droplet), so prgname is never clobbered by a sibling widget.
+        if manifest.title:
+            GLib.set_prgname(manifest.title)
+            GLib.set_application_name(manifest.title)
+
         # Bridge: JS -> Python over a WebKit2 script-message handler.
         ucm = WebKit2.UserContentManager()
         ucm.register_script_message_handler("droplet")
