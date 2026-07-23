@@ -40,7 +40,7 @@ from . import server
 from .backend import debug_enabled
 from .executable import StdioExecutable, load_executable
 from .manifest import Manifest
-from .utils import DRAG_GRIP_JS
+from .utils import DRAG_GRIP_JS, open_web_url
 
 # JS shim: preserve the widget-facing `droplets.send(cmd)` API but route it
 # through pywebview's js_api instead of WebKit2's messageHandlers.
@@ -55,6 +55,10 @@ from .utils import DRAG_GRIP_JS
 _BRIDGE_SHIM = (
     "window.droplets = window.droplets || {};"
     "droplets._queue = [];"
+    # Default no-op so a bridge reply never throws for a widget that doesn't use
+    # the receive channel (droplet_move/droplet_resize reply with null). A widget
+    # that wants replies just assigns its own droplets.recieve, overriding this.
+    "droplets.recieve = droplets.recieve || function() {};"
     "droplets.send = function(cmd) {"
     "  if (cmd === undefined || cmd === null) return;"
     "  if (window.pywebview && window.pywebview.api)"
@@ -319,11 +323,21 @@ class Droplet:
 
     # ---- JS <-> Python bridge (mirrors the GTK backend) -----------------
 
+    # Builtins a remote/hosted widget may call. Those tiers get no general bridge
+    # (see csp.py) so a remote script can't reach the widget's Python module, but
+    # reading the widget's own declared options and opening a URL in the OS
+    # browser touch nothing else -- neither reopens the RCE surface the CSP closes.
+    _REMOTE_SAFE_METHODS = ("droplet_options", "droplet_open_url")
+
     def recieve(self, msg):
-        if msg == "null" or self.manifest.origin != "local":
+        if msg == "null":
             return
         packet = json.loads(msg)
         args = packet.get("args", {})
+        if self.manifest.origin != "local":
+            if packet["method"] in self._REMOTE_SAFE_METHODS:
+                self.send(getattr(self, packet["method"])(**args))
+            return
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
             if fn:
@@ -372,6 +386,12 @@ class Droplet:
     def droplet_options(self):
         """Current values of the options the manifest declares (user's or default)."""
         return self.manifest.option_values()
+
+    def droplet_open_url(self, url):
+        """Open an http(s) link in the OS browser. A widget with links (Last.fm,
+        say) hands them here so a click leaves the widget's own window instead of
+        navigating it away. Scheme-guarded in utils.open_web_url."""
+        open_web_url(url)
 
     def droplet_deactivate(self):
         self.on_close()
@@ -497,13 +517,17 @@ class Droplet:
             self._pending_move = (x, y)
             self.temp["x"], self.temp["y"] = x, y
 
-        # Local tier: served over loopback (droplets/server.py) rather than read
-        # off disk, which is what lets the CSP be a real response header and what
-        # gives the widget access to its own assets -- a file:// document created
-        # by load_html() has neither. The shim rides along in the same response.
-        if manifest.origin == "local":
+        # Served over loopback (droplets/server.py) rather than read off disk,
+        # which is what lets the CSP be a real response header and what gives the
+        # widget access to its own assets -- a file:// document created by
+        # load_html() has neither. The shim rides along in the same response.
+        # `remote` is served too (GTK injects the shim for it via UserScript; this
+        # is the pywebview equivalent) so remote widgets get the safe-builtin
+        # bridge -- csp.policy_for returns None for remote, so no CSP header is
+        # added and it still reaches the web. `hosted` loads its own external URL.
+        if manifest.origin in ("local", "remote"):
             head = _BRIDGE_SHIM_TAG
-            if manifest.fit_content:
+            if manifest.origin == "local" and manifest.fit_content:
                 head += _FIT_CONTENT_SHIM_TAG
             self.root_url = server.serve(
                 os.path.abspath(path), manifest.source, manifest.origin, head

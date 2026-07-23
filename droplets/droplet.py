@@ -26,12 +26,16 @@ from . import geometry  # noqa: E402
 from .backend import debug_enabled  # noqa: E402
 from .executable import StdioExecutable, load_executable  # noqa: E402
 from .manifest import Manifest  # noqa: E402
-from .utils import DRAG_GRIP_JS, GRIP_PX  # noqa: E402
+from .utils import DRAG_GRIP_JS, GRIP_PX, open_web_url  # noqa: E402
 
 # JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
 # WebKit2 script-message handler instead of the WebKit1 document.title hack.
 _BRIDGE_SHIM = (
     "window.droplets = window.droplets || {};"
+    # Default no-op so a bridge reply never throws for a widget that doesn't use
+    # the receive channel (droplet_move/droplet_resize reply with null). A widget
+    # that wants replies just assigns its own droplets.recieve, overriding this.
+    "droplets.recieve = droplets.recieve || function() {};"
     "droplets.send = function(cmd) {"
     "  if (cmd !== undefined && cmd !== null)"
     "    window.webkit.messageHandlers.droplet.postMessage(String(cmd));"
@@ -218,11 +222,21 @@ class Droplet:
         """script-message-received::droplet -> dispatch to widget module."""
         self.recieve(message.get_js_value().to_string())
 
+    # Builtins a remote/hosted widget may call. Those tiers get no general bridge
+    # (see csp.py) so a remote script can't reach the widget's Python module, but
+    # reading the widget's own declared options and opening a URL in the OS
+    # browser touch nothing else -- neither reopens the RCE surface the CSP closes.
+    _REMOTE_SAFE_METHODS = ("droplet_options", "droplet_open_url")
+
     def recieve(self, msg):
-        if msg == "null" or self.manifest.origin != "local":
+        if msg == "null":
             return
         packet = json.loads(msg)
         args = packet.get("args", {})
+        if self.manifest.origin != "local":
+            if packet["method"] in self._REMOTE_SAFE_METHODS:
+                self.send(getattr(self, packet["method"])(**args))
+            return
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
             if fn:
@@ -336,6 +350,12 @@ class Droplet:
     def droplet_options(self):
         """Current values of the options the manifest declares (user's or default)."""
         return self.manifest.option_values()
+
+    def droplet_open_url(self, url):
+        """Open an http(s) link in the OS browser. A widget with links (Last.fm,
+        say) hands them here so a click leaves the widget's own window instead of
+        navigating it away. Scheme-guarded in utils.open_web_url."""
+        open_web_url(url)
 
     def droplet_deactivate(self, w=None, e=None):
         self.on_focus_out()

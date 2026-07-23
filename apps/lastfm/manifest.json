@@ -11,8 +11,16 @@
     "corner_radius": 5, 
     "y": 221, 
     "x": 1153, 
-    "skip_taskbar": true, 
-    "decorated": false, 
-    "transparent": true, 
-    "stick": true
+    "skip_taskbar": true,
+    "decorated": false,
+    "transparent": true,
+    "stick": true,
+    "options": {
+        "profile": {
+            "type": "string",
+            "label": "Last.fm profile",
+            "description": "The Last.fm username whose recent tracks to show.",
+            "default": "thestamat"
+        }
+    }
 }

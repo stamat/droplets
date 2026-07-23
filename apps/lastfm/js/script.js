@@ -1,15 +1,41 @@
 var api_key = 'aa4e907633d320199addca746884ec69';
-var user = 'thestamat';
+var user = 'thestamat';   // default; overridden by the manifest 'profile' option
 var limit = 5;
 var trim_brackets = false;
+var started = false;
 
 $(document).ready(function(){
-	
+
 	if((limit == null)||(limit == undefined))
 		limit = 10;
 
+	// target="_blank" links point at last.fm and would replace the widget if
+	// followed; hand those to the OS browser through the bridge (droplet_open_url).
+	// In-widget links (no _blank) navigate normally.
+	$('#container').on('click', 'a[target="_blank"]', function(e){
+		e.preventDefault();
+		droplets.send(JSON.stringify({ method: 'droplet_open_url', args: { url: this.href } }));
+	});
+
+	// Pull the configurable profile from the manifest option, then start. The
+	// open_url calls above land on this same recieve (with a null ack) -- the
+	// `started` guard keeps those from re-running the build.
+	window.droplets = window.droplets || {};
+	droplets.recieve = function(opts){
+		if (started) return;
+		if (opts && opts.profile) user = opts.profile;
+		started = true;
+		start();
+	};
+	if (droplets.send)
+		droplets.send(JSON.stringify({ method: 'droplet_options', args: {} }));
+	else { started = true; start(); }   // no bridge (older backend): use default
+
+});
+
+function start() {
 	appendStructure('#container');
-	
+
 	$('#lastbadge li').hover(
 		function(){
 			$(this).addClass('hover');
@@ -18,7 +44,7 @@ $(document).ready(function(){
 			$(this).removeClass('hover');
 		}
 	);
-	
+
 	$('#lastbadge .user').hover(
 		function(){
 			$('#lastbadge .user .name').addClass('hover');
@@ -27,14 +53,13 @@ $(document).ready(function(){
 			$('#lastbadge .user .name').removeClass('hover');
 		}
 	);
-	
+
 	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user='+user+'&limit='+limit+'&api_key='+ api_key+'&format=json', parseRecentTracks);
 	ajax('GET','http://ws.audioscrobbler.com/2.0/?method=user.getinfo&user='+user+'&api_key='+ api_key+'&format=json', parseInfo);
-
-});
+}
 
 function appendStructure(where) {
-	$(where).append('<div id="lastbadge"><a class="profile-url" href=""><div class="user"><div class="avatar"><img src=""/></div><div class="name"><p><span class="data"></span></p></div><div class="total"><p>Plays: <span class="data"></span></p></div><div class="logo" style="color: white;"><svg fill="none" height="16" viewBox="0 0 671 373" width="29" xmlns="http://www.w3.org/2000/svg"><path d="m510.511 372.349c-132.809 0-178.885-59.881-203.439-134.349l-24.57-76.774c-18.417-56.043-39.906-99.8047-107.481-99.8047-46.842 0-94.4168 33.7787-94.4168 128.2047 0 73.693 37.6168 119.77 90.5788 119.77 59.889 0 99.821-44.528 99.821-44.528l24.57 66.792s-41.472 40.68-128.221 40.68c-107.4636 0-167.353-62.944-167.353-179.642 0-121.2852 59.8894-192.698 172.74-192.698 102.111 0 153.558 36.8511 185.788 136.655l25.344 76.766c18.417 56.043 50.664 96.741 128.196 96.741 52.221 0 79.821-11.524 79.821-39.924 0-22.264-13.021-38.383-52.178-47.6l-52.239-12.272c-63.685-15.353-89.046-48.374-89.046-100.57 0-83.6853 67.566-109.7874856 136.663-109.7874856 78.324 0 125.915 28.4084856 132.06 97.5063856l-76.775 9.2081c-3.072-33.0124-23.021-46.8251-59.872-46.8251-33.804 0-54.493 15.3532-54.493 41.4551 0 23.03 9.957 36.851 43.753 44.528l49.132 10.749c66.025 15.353 101.319 47.6 101.319 109.779-.009 76.774-64.485 105.94-159.702 105.94z" fill="currentColor"/></svg></div></div></a><ul class="songs clearfix"></ul></div>');
+	$(where).append('<div id="lastbadge"><a class="profile-url" target="_blank" href=""><div class="user"><div class="avatar"><img src=""/></div><div class="name"><p><span class="data"></span></p></div><div class="total"><p>Plays: <span class="data"></span></p></div><div class="logo" style="color: white;"><svg fill="none" height="16" viewBox="0 0 671 373" width="29" xmlns="http://www.w3.org/2000/svg"><path d="m510.511 372.349c-132.809 0-178.885-59.881-203.439-134.349l-24.57-76.774c-18.417-56.043-39.906-99.8047-107.481-99.8047-46.842 0-94.4168 33.7787-94.4168 128.2047 0 73.693 37.6168 119.77 90.5788 119.77 59.889 0 99.821-44.528 99.821-44.528l24.57 66.792s-41.472 40.68-128.221 40.68c-107.4636 0-167.353-62.944-167.353-179.642 0-121.2852 59.8894-192.698 172.74-192.698 102.111 0 153.558 36.8511 185.788 136.655l25.344 76.766c18.417 56.043 50.664 96.741 128.196 96.741 52.221 0 79.821-11.524 79.821-39.924 0-22.264-13.021-38.383-52.178-47.6l-52.239-12.272c-63.685-15.353-89.046-48.374-89.046-100.57 0-83.6853 67.566-109.7874856 136.663-109.7874856 78.324 0 125.915 28.4084856 132.06 97.5063856l-76.775 9.2081c-3.072-33.0124-23.021-46.8251-59.872-46.8251-33.804 0-54.493 15.3532-54.493 41.4551 0 23.03 9.957 36.851 43.753 44.528l49.132 10.749c66.025 15.353 101.319 47.6 101.319 109.779-.009 76.774-64.485 105.94-159.702 105.94z" fill="currentColor"/></svg></div></div></a><ul class="songs clearfix"></ul></div>');
 	
 	var html = '';
 	
@@ -49,7 +74,7 @@ function appendStructure(where) {
 }
 
 function trackHtml(id, second) {
-	return 	'<li id="lsfm-song'+id+'" class="song '+second+'"><a href="" title=""> \n'+
+	return 	'<li id="lsfm-song'+id+'" class="song '+second+'"><a target="_blank" href="" title=""> \n'+
 				'<div class="wrapper clearfix"> \n' +
 					'<div class="cover meta"> <img src="http://dl.dropbox.com/u/2808807/projects/lastbadge/loading.gif"/></div>'+
 					'<div class="name meta"> <p class="data"></p></div>'+

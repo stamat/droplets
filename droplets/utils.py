@@ -2,6 +2,8 @@
 
 import importlib.util
 import os
+import webbrowser
+from urllib.parse import urlparse
 
 
 # Drag grip: an app that paints its whole surface (the calculator's keypad, say)
@@ -30,6 +32,20 @@ DRAG_GRIP_JS = (
 )
 
 
+def open_web_url(url):
+    """Open an http(s) URL in the user's default browser; ignore anything else.
+
+    The scheme guard matters: this is reachable from a remote-tier widget (see
+    each backend's _REMOTE_SAFE_METHODS), so file://, javascript: and app: URLs
+    must never be handed to the OS opener. webbrowser picks the platform opener
+    (`open` on macOS, `xdg-open` on Linux), so no per-OS branching here.
+    """
+    if isinstance(url, str) and urlparse(url).scheme in ("http", "https"):
+        webbrowser.open(url)
+        return True
+    return False
+
+
 def import_from_uri(uri, absl=False):
     """Import a widget's Python module from a file path (imp is gone in 3.12)."""
     if not absl:
@@ -45,3 +61,17 @@ def import_from_uri(uri, absl=False):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+if __name__ == "__main__":
+    import unittest.mock as mock
+
+    with mock.patch("webbrowser.open") as opened:
+        assert open_web_url("https://last.fm/user/x") is True
+        assert open_web_url("http://example.com") is True
+        assert open_web_url("file:///etc/passwd") is False
+        assert open_web_url("javascript:alert(1)") is False
+        assert open_web_url("") is False
+        assert open_web_url(None) is False
+        assert opened.call_count == 2, opened.call_count
+    print("ok")
