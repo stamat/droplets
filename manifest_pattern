@@ -19,6 +19,7 @@
 	"shape": ["rect", 0],
 	"corner_radius": [0, 0],
 	"resizable": [false, 0],
+	"fit_content": [false, 0],
 	"screen": [0, 0],
 	"y": [null, 0], 
 	"x": [null, 0],

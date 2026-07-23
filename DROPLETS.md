@@ -152,11 +152,28 @@ allowed (passed through untouched).
 | `width` | `300` | int | **Mandatory.** Window width. |
 | `height` | `300` | int | **Mandatory.** Window height. |
 | `resizable` | `false` | bool | Allow the user to resize. |
+| `fit_content` | `false` | bool | Size the window to the document instead of `width`/`height`, and follow it as the content changes (see below). `local` tier only; don't combine with `resizable`. |
 | `shape` | `"rect"` | enum `rect`\|`roundedrect`\|`circle`\|`mask` | Window silhouette. |
 | `corner_radius` | `0` | int | Corner radius when `shape: roundedrect`. |
 | `shape_mask` | `null` | string | PNG path for `shape: mask` (arbitrary silhouette). **GTK/X11 only** — no-op elsewhere; use `transparent` + PNG-alpha for cross-platform shaping. |
 | `transparent` | `false` | bool | RGBA transparent window (needed for non-rect shapes). |
 | `opacity` | `1` | number | Whole-window opacity, `0`–`1`. |
+
+> **`fit_content`.** A webview never pushes its content size up to the window,
+> so with `fit_content: true` a tiny script measures `document.documentElement`
+> and resizes the window to match — once at load, then on every change via a
+> `ResizeObserver`. `width`/`height` still seed the initial window before the
+> first measure. Two things to know:
+> - **Height fits for free; width needs CSS.** A block-level `<body>` fills the
+>   viewport width, so measured width won't shrink below the window unless your
+>   root is content-sized — add `html, body { width: max-content }` (or make the
+>   root `display: inline-block`). Height already tracks content.
+> - **`local` tier only**, and don't pair it with `resizable` — the auto-size
+>   would fight (and overwrite) the user's manual size. Size is not persisted for
+>   a `fit_content` widget; it is re-measured every launch.
+>
+> Any widget can also resize itself on demand — `fit_content` or not — by
+> calling `droplets.send(JSON.stringify({ method: "droplet_resize", args: { width, height } }))`.
 
 ### Window behaviour
 

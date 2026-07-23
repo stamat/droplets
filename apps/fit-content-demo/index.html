@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fit Content Demo</title>
+  <style>
+    /* fit_content measures document.documentElement. A normal block <body>
+       fills the viewport width, so WIDTH only shrinks to content when the root
+       is content-sized. This is the line that makes width track content: */
+    html, body { width: max-content; }
+
+    html, body { margin: 0; padding: 0; background: transparent; }
+    body {
+      font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+      color: #f4f4f5;
+      -webkit-user-select: none; user-select: none;
+    }
+    .card {
+      margin: 10px;                 /* leave room so the grip corner is grabbable */
+      padding: 14px 16px;
+      background: rgba(24, 24, 27, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    h1 { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: .2px; }
+    p  { margin: 0 0 10px; color: #a1a1aa; white-space: nowrap; }
+    ul { margin: 0 0 12px; padding-left: 18px; }
+    li { white-space: nowrap; }
+    .row { display: flex; gap: 8px; }
+    button {
+      flex: 1; padding: 6px 10px; font: inherit; color: #f4f4f5; cursor: pointer;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px;
+    }
+    button:hover  { background: rgba(255, 255, 255, 0.14); }
+    button:active { background: rgba(255, 255, 255, 0.20); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>fit_content</h1>
+    <p id="hint">the window tracks this box</p>
+    <ul id="list"></ul>
+    <div class="row">
+      <button id="add">+ row</button>
+      <button id="rm">– row</button>
+      <button id="wide">toggle width</button>
+    </div>
+  </div>
+
+  <script>
+    // No bridge calls here: fit_content is entirely backend-side. This page just
+    // changes its own size; the injected ResizeObserver reports it and the
+    // window follows. Watch height grow with rows and width jump on "toggle".
+    var list = document.getElementById('list');
+    var hint = document.getElementById('hint');
+    var n = 0, wide = false;
+
+    function addRow() {
+      n++;
+      var li = document.createElement('li');
+      li.textContent = 'item ' + n;
+      list.appendChild(li);
+    }
+    function rmRow() {
+      if (list.lastChild) { list.removeChild(list.lastChild); n = Math.max(0, n - 1); }
+    }
+    document.getElementById('add').onclick  = addRow;
+    document.getElementById('rm').onclick   = rmRow;
+    document.getElementById('wide').onclick = function () {
+      wide = !wide;
+      hint.textContent = wide
+        ? 'the window tracks this box — even when a line gets much longer than before'
+        : 'the window tracks this box';
+    };
+
+    addRow(); addRow();  // start with a couple so there is something to size to
+  </script>
+</body>
+</html>

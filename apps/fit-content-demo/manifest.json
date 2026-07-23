@@ -1,0 +1,15 @@
+{
+    "title": "Fit Content Demo",
+    "description": "Window auto-sizes to its content (fit_content).",
+    "type": "widget",
+    "width": 240,
+    "height": 120,
+    "fit_content": true,
+    "transparent": true,
+    "decorated": false,
+    "stick": true,
+    "above": true,
+    "skip_taskbar": true,
+    "x": 120,
+    "y": 120
+}

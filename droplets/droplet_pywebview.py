@@ -75,6 +75,29 @@ _BRIDGE_SHIM = (
 # for every widget regardless of the manifest `drag` flag.
 _BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + DRAG_GRIP_JS + "</script>"
 
+# fit_content: size the window to the document instead of the manifest's fixed
+# width/height. The webview never pushes content size up to the window, so JS
+# measures documentElement and calls droplet_resize back over the bridge; a
+# ResizeObserver keeps it in sync when the widget's own size changes at runtime.
+#
+# Measures documentElement.scrollWidth/scrollHeight: a block-level body fills the
+# viewport width, so width only tracks content if the widget's root is itself
+# content-sized (display:inline-block / width:max-content). `last` drops the
+# no-op repeat the resize->relayout->observer round trip would otherwise loop on.
+_FIT_CONTENT_SHIM = (
+    "(function(){"
+    "var last='';"
+    "function report(){"
+    "var e=document.documentElement,w=e.scrollWidth,h=e.scrollHeight,k=w+'x'+h;"
+    "if(k===last)return;last=k;"
+    "droplets.send(JSON.stringify({method:'droplet_resize',args:{width:w,height:h}}));"
+    "}"
+    "new ResizeObserver(report).observe(document.documentElement);"
+    "window.addEventListener('load',report);"
+    "})();"
+)
+_FIT_CONTENT_SHIM_TAG = "<script>" + _FIT_CONTENT_SHIM + "</script>"
+
 # Seconds of stillness that count as "the drag is over". Cocoa's windowDidMove_
 # fires on every frame of a drag (easy_drag included), and pywebview has no
 # drag-end event, so geometry is written once the stream goes quiet.
@@ -341,6 +364,11 @@ class Droplet:
     def droplet_move(self, x, y):
         self.window.move(int(x), int(y))
 
+    def droplet_resize(self, width, height):
+        # Driven by the fit_content observer (see _FIT_CONTENT_SHIM); also
+        # callable by a widget that wants to resize itself outright.
+        self.window.resize(int(width), int(height))
+
     def droplet_options(self):
         """Current values of the options the manifest declares (user's or default)."""
         return self.manifest.option_values()
@@ -474,8 +502,11 @@ class Droplet:
         # gives the widget access to its own assets -- a file:// document created
         # by load_html() has neither. The shim rides along in the same response.
         if manifest.origin == "local":
+            head = _BRIDGE_SHIM_TAG
+            if manifest.fit_content:
+                head += _FIT_CONTENT_SHIM_TAG
             self.root_url = server.serve(
-                os.path.abspath(path), manifest.source, manifest.origin, _BRIDGE_SHIM_TAG
+                os.path.abspath(path), manifest.source, manifest.origin, head
             )
             kwargs["url"] = self.root_url
         else:

@@ -38,6 +38,26 @@ _BRIDGE_SHIM = (
     "};"
 ) + DRAG_GRIP_JS
 
+# fit_content: size the window to the document instead of the manifest's fixed
+# width/height. WebKit never pushes content size up to the window, so JS measures
+# documentElement and calls droplet_resize back over the bridge; a ResizeObserver
+# keeps it in sync when the widget's own size changes at runtime. Same measure
+# caveat as the pywebview backend: a block body fills the viewport, so width only
+# tracks content if the widget's root is content-sized. Local tier only (recieve
+# ignores remote/hosted), so this is a no-op there.
+_FIT_CONTENT_SHIM = (
+    "(function(){"
+    "var last='';"
+    "function report(){"
+    "var e=document.documentElement,w=e.scrollWidth,h=e.scrollHeight,k=w+'x'+h;"
+    "if(k===last)return;last=k;"
+    "droplets.send(JSON.stringify({method:'droplet_resize',args:{width:w,height:h}}));"
+    "}"
+    "new ResizeObserver(report).observe(document.documentElement);"
+    "window.addEventListener('load',report);"
+    "})();"
+)
+
 
 class Droplet:
     def __init__(self, path, custom_manifest=None):
@@ -308,6 +328,11 @@ class Droplet:
     def droplet_move(self, x, y):
         self.window.move(int(x), int(y))
 
+    def droplet_resize(self, width, height):
+        # Driven by the fit_content observer (see _FIT_CONTENT_SHIM); also
+        # callable by a widget that wants to resize itself outright.
+        self.window.resize(int(width), int(height))
+
     def droplet_options(self):
         """Current values of the options the manifest declares (user's or default)."""
         return self.manifest.option_values()
@@ -407,6 +432,18 @@ class Droplet:
                 None,
             )
         )
+        if manifest.fit_content:
+            # END, not START: the observer needs documentElement laid out. The
+            # bridge shim it calls is defined at START, so it is ready by then.
+            ucm.add_script(
+                WebKit2.UserScript.new(
+                    _FIT_CONTENT_SHIM,
+                    WebKit2.UserContentInjectedFrames.TOP_FRAME,
+                    WebKit2.UserScriptInjectionTime.END,
+                    None,
+                    None,
+                )
+            )
         browser = WebKit2.WebView.new_with_user_content_manager(ucm)
         self.browser = browser
 
@@ -424,7 +461,11 @@ class Droplet:
             # hasn't been shown yet (window.show_all() is further down).
             GLib.idle_add(inspector.show)
 
-        window.set_resizable(manifest.resizable)
+        # fit_content forces set_resizable(True): a non-resizable GTK window
+        # sizes to its child and ignores gtk_window_resize, so droplet_resize
+        # would be a no-op otherwise. Frameless widgets expose no drag edge, and
+        # size persistence still keys off manifest.resizable (see on_focus_out).
+        window.set_resizable(manifest.resizable or manifest.fit_content)
         window.set_keep_below(manifest.below)
         window.set_keep_above(manifest.above)
         window.set_skip_taskbar_hint(manifest.skip_taskbar)
