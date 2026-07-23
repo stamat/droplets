@@ -40,6 +40,7 @@ from . import server
 from .backend import debug_enabled
 from .executable import StdioExecutable, load_executable
 from .manifest import Manifest
+from .utils import DRAG_GRIP_JS
 
 # JS shim: preserve the widget-facing `droplets.send(cmd)` API but route it
 # through pywebview's js_api instead of WebKit2's messageHandlers.
@@ -65,7 +66,14 @@ _BRIDGE_SHIM = (
     "  q.forEach(function(c) { window.pywebview.api.send(c); });"
     "});"
 )
-_BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + "</script>"
+# Drag grip (utils.DRAG_GRIP_JS): a full-surface app (the calculator's keypad)
+# leaves no bare pixel to grab, and easy_drag=True would hijack every button
+# press into a window move. The grip's .pywebview-drag-region hands the move to
+# Cocoa natively (customize.js -> pywebviewMoveWindow), sidestepping the
+# global/screen-relative coordinate math macOS makes painful here (see
+# _apply_native_macos), AND works with easy_drag off -- so it moves the window
+# for every widget regardless of the manifest `drag` flag.
+_BRIDGE_SHIM_TAG = "<script>" + _BRIDGE_SHIM + DRAG_GRIP_JS + "</script>"
 
 # Seconds of stillness that count as "the drag is over". Cocoa's windowDidMove_
 # fires on every frame of a drag (easy_drag included), and pywebview has no

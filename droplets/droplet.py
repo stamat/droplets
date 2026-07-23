@@ -26,6 +26,7 @@ from . import geometry  # noqa: E402
 from .backend import debug_enabled  # noqa: E402
 from .executable import StdioExecutable, load_executable  # noqa: E402
 from .manifest import Manifest  # noqa: E402
+from .utils import DRAG_GRIP_JS, GRIP_PX  # noqa: E402
 
 # JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
 # WebKit2 script-message handler instead of the WebKit1 document.title hack.
@@ -35,7 +36,7 @@ _BRIDGE_SHIM = (
     "  if (cmd !== undefined && cmd !== null)"
     "    window.webkit.messageHandlers.droplet.postMessage(String(cmd));"
     "};"
-)
+) + DRAG_GRIP_JS
 
 
 class Droplet:
@@ -279,6 +280,15 @@ class Droplet:
         if e.button == 1:
             self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
 
+    def grip_press(self, w, e):
+        """Drag from the top-left grip (utils.DRAG_GRIP_JS) even when Move is off.
+        e.x/e.y are widget-relative logical px, matching the grip's fixed corner;
+        return True to consume so the click isn't also delivered to the app."""
+        if e.button == 1 and e.x < GRIP_PX and e.y < GRIP_PX:
+            self.droplet_drag(e.button, e.x_root, e.y_root, e.time)
+            return True
+        return False
+
     def droplet_move_enable(self, browser=None, manifest=None):
         if browser is None:
             browser = self.browser
@@ -425,6 +435,9 @@ class Droplet:
 
         if manifest.drag:
             self.droplet_move_enable(browser, manifest)
+
+        # Always-on grab point (the corner grip), independent of the Move toggle.
+        browser.connect("button-press-event", self.grip_press)
 
         window.connect("configure-event", self.on_configure)
         window.connect("focus-out-event", self.on_focus_out)
