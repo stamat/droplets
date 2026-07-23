@@ -231,6 +231,10 @@ http://webkitgtk.org/reference/webkitgtk/stable/webkitgtk-webkitwebview.html
 
 http://www.pygtk.org/docs/pygtk/class-gtkwindow.html
 
+https://stackoverflow.com/questions/14031382/create-shape-mask-for-gtk-window
+
+https://pywebview.flowrl.com/guide/
+
 ## Author
 
 Nikola Stamatovic Stamat
