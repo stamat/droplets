@@ -31,14 +31,15 @@ import os
 import re
 import sys
 import threading
+import traceback
 import urllib.request
 
 import webview  # pip install pywebview  (+ pyobjc on macOS, pythonnet on Windows)
 
 from . import server
 from .backend import debug_enabled
+from .executable import StdioExecutable, load_executable
 from .manifest import Manifest
-from .utils import import_from_uri
 
 # JS shim: preserve the widget-facing `droplets.send(cmd)` API but route it
 # through pywebview's js_api instead of WebKit2's messageHandlers.
@@ -269,24 +270,33 @@ class Droplet:
         if msg == "null" or self.manifest.origin != "local":
             return
         packet = json.loads(msg)
+        args = packet.get("args", {})
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
-        else:
-            # Optional allowlist: when manifest.allowed_methods is set, only those
-            # module functions are callable from JS (the hybrid-tier gate). Absent
-            # (null) keeps the legacy behaviour of exposing every module function.
-            allowed = getattr(self.manifest, "allowed_methods", None)
-            if allowed is not None and packet["method"] not in allowed:
-                return
-            fn = getattr(self.module, packet["method"], None)
-            args = packet.get("args", {})
-            # GTK backend also injects gtk/browser here; pywebview only has a
-            # window handle to hand a module that asks for one.
-            if "window" in args:
-                args["window"] = self.window
-        if fn:
-            result = fn(**packet.get("args", {}))
-            self.send(result)
+            if fn:
+                self.send(fn(**args))
+            return
+        # Optional allowlist: when manifest.allowed_methods is set, only those
+        # module functions are callable from JS (the hybrid-tier gate). Absent
+        # (null) keeps the legacy behaviour of exposing every module function.
+        allowed = getattr(self.manifest, "allowed_methods", None)
+        if allowed is not None and packet["method"] not in allowed:
+            return
+        fn = getattr(self.module, packet["method"], None)
+        if not fn:
+            return
+        # A live window handle is only injectable into an in-process Python
+        # module; a StdioExecutable child gets JSON-serialisable args only.
+        # (GTK backend also injects gtk/browser; pywebview only has window.)
+        if "window" in args and not isinstance(self.module, StdioExecutable):
+            args["window"] = self.window
+        try:
+            self.send(fn(**args))
+        except Exception as e:
+            # Report to the widget's JS instead of crashing the bridge handler.
+            # (StdioExecutable also logs the child's own stderr separately.)
+            traceback.print_exc()
+            self.send({"error": "%s: %s" % (type(e).__name__, e)})
 
     def send(self, msg):
         # json.dumps yields a safe JS literal (same fix as the GTK backend):
@@ -307,6 +317,8 @@ class Droplet:
 
     def droplet_deactivate(self):
         self.on_close()
+        if isinstance(self.module, StdioExecutable):
+            self.module.close()
         self.window.destroy()
 
     # ---- window geometry persistence ------------------------------------
@@ -746,7 +758,7 @@ class Droplet:
         manifest = Manifest(path_to_manifest)
         self.temp["x"] = manifest.x or 0
         self.temp["y"] = manifest.y or 0
-        module = import_from_uri(os.path.join(path, manifest.executable), True)
+        module = load_executable(os.path.join(path, manifest.executable), True)
         window = self.prepare_widget(manifest, module, path)
 
         return manifest, module, window

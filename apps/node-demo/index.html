@@ -1,0 +1,58 @@
+<html>
+<head>
+  <title>Node demo</title>
+  <style>
+    body { margin: 0; font: 14px system-ui, sans-serif; color: #1a1a1a; background: #f4f4f5; padding: 16px; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 14px; color: #666; }
+    .row { display: flex; gap: 8px; margin: 8px 0; }
+    input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+    button { padding: 6px 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
+    button.warn { background: #b91c1c; }
+    #out { margin-top: 12px; padding: 10px; background: #fff; border: 1px solid #e4e4e7; border-radius: 6px;
+           white-space: pre-wrap; min-height: 42px; font-family: ui-monospace, monospace; font-size: 13px; }
+    #out.err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>Backend is <code>main.js</code> (Node)</h1>
+  <p class="sub">Same <code>droplets.send</code> bridge — the reply comes from a Node child process, not Python.</p>
+
+  <div class="row">
+    <input id="text" value="droplets" placeholder="type something" />
+    <button onclick="reverse()">Reverse</button>
+  </div>
+  <div class="row">
+    <button onclick="call('node_info')">Who am I?</button>
+    <button class="warn" onclick="call('boom')">Trigger error</button>
+  </div>
+
+  <div id="out">…</div>
+
+  <script type="application/x-javascript">
+    var out = document.getElementById('out');
+
+    // Replies (and errors) from the Node backend land here.
+    droplets.recieve = function (msg) {
+      if (msg && typeof msg === 'object' && 'error' in msg) {
+        out.className = 'err';
+        out.textContent = 'error: ' + msg.error;
+      } else {
+        out.className = '';
+        out.textContent = JSON.stringify(msg);
+      }
+    };
+
+    function call(method, args) {
+      droplets.send(JSON.stringify({ method: method, args: args || {} }));
+    }
+
+    function reverse() {
+      call('reverse', { text: document.getElementById('text').value });
+    }
+
+    // Prove on load that the backend is really Node.
+    call('node_info');
+  </script>
+</body>
+</html>

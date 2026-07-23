@@ -3,11 +3,11 @@
 Ported from PyGTK2 + WebKit1 to PyGObject (GTK 3) + WebKit2 / Python 3.
 """
 
-import importlib.util
 import json
 import math
 import os
 import re
+import traceback
 import urllib.request
 from subprocess import call
 
@@ -24,6 +24,7 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, WebKit2  # noqa: E402
 from . import csp  # noqa: E402
 from . import geometry  # noqa: E402
 from .backend import debug_enabled  # noqa: E402
+from .executable import StdioExecutable, load_executable  # noqa: E402
 from .manifest import Manifest  # noqa: E402
 
 # JS shim: keeps the old `droplets.send(cmd)` API but routes it through the
@@ -52,24 +53,6 @@ class Droplet:
 
         self.init_widget(path, custom_manifest)
         Gtk.main()
-
-    # ---- module loading -------------------------------------------------
-
-    def importFromURI(self, uri, absl=False):
-        """Import a widget's Python module from a file path (imp is gone in 3.12)."""
-        if not absl:
-            uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
-        path, fname = os.path.split(uri)
-        mname, _ext = os.path.splitext(fname)
-        source = os.path.join(path, mname) + ".py"
-        if not os.path.exists(source):
-            return None
-        spec = importlib.util.spec_from_file_location(mname, source)
-        if spec is None or spec.loader is None:
-            return None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
 
     # ---- window shaping (GTK3: cairo regions, Pixmap is gone) -----------
 
@@ -218,26 +201,37 @@ class Droplet:
         if msg == "null" or self.manifest.origin != "local":
             return
         packet = json.loads(msg)
+        args = packet.get("args", {})
         if packet["method"].startswith("droplet_"):
             fn = getattr(self, packet["method"], None)
-        else:
-            # Optional allowlist: when manifest.allowed_methods is set, only those
-            # module functions are callable from JS (the hybrid-tier gate). Absent
-            # (null) keeps the legacy behaviour of exposing every module function.
-            allowed = getattr(self.manifest, "allowed_methods", None)
-            if allowed is not None and packet["method"] not in allowed:
-                return
-            fn = getattr(self.module, packet["method"], None)
-            args = packet.get("args", {})
+            if fn:
+                self.send(fn(**args))
+            return
+        # Optional allowlist: when manifest.allowed_methods is set, only those
+        # module functions are callable from JS (the hybrid-tier gate). Absent
+        # (null) keeps the legacy behaviour of exposing every module function.
+        allowed = getattr(self.manifest, "allowed_methods", None)
+        if allowed is not None and packet["method"] not in allowed:
+            return
+        fn = getattr(self.module, packet["method"], None)
+        if not fn:
+            return
+        # Live GTK handles are only injectable into an in-process Python module;
+        # a StdioExecutable child gets JSON-serialisable args only.
+        if not isinstance(self.module, StdioExecutable):
             if "gtk" in args:
                 args["gtk"] = Gtk
             if "browser" in args:
                 args["browser"] = self.browser
             if "window" in args:
                 args["window"] = self.window
-        if fn:
-            result = fn(**packet.get("args", {}))
-            self.send(result)
+        try:
+            self.send(fn(**args))
+        except Exception as e:
+            # Report to the widget's JS instead of crashing the bridge handler.
+            # (StdioExecutable also logs the child's own stderr separately.)
+            traceback.print_exc()
+            self.send({"error": "%s: %s" % (type(e).__name__, e)})
 
     def send(self, msg):
         # json.dumps yields a safe JS literal; raw %-interpolation broke (or let
@@ -310,6 +304,8 @@ class Droplet:
 
     def droplet_deactivate(self, w=None, e=None):
         self.on_focus_out()
+        if isinstance(self.module, StdioExecutable):
+            self.module.close()
         Gtk.main_quit()
 
     # ---- context menu ---------------------------------------------------
@@ -587,7 +583,7 @@ class Droplet:
         manifest = Manifest(path_to_manifest)
         self.temp["x"] = manifest.x
         self.temp["y"] = manifest.y
-        module = self.importFromURI(os.path.join(path, manifest.executable), True)
+        module = load_executable(os.path.join(path, manifest.executable), True)
         window, browser = self.prepare_widget(manifest, module, path)
 
         self.load_widget(browser, manifest.origin, path + manifest.source)

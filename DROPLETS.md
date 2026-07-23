@@ -143,7 +143,7 @@ allowed (passed through untouched).
 |-------|---------|------|---------|
 | `origin` | `"local"` | enum `local`\|`remote`\|`hosted` | Security tier (see above). |
 | `source` | `"index.html"` | string | Entry document (a URL when `origin: hosted`). |
-| `executable` | `"main"` | string | Python module (no `.py`) loaded for the bridge on `local`. |
+| `executable` | `"main"` | string | Backend loaded for the bridge on `local`. `main.py` (in-process Python) by default; `main.js`/`main.rb` run as a child process instead — see [Non-Python executables](#non-python-executables-node-ruby). |
 
 ### Size & shape
 
@@ -418,7 +418,77 @@ They act on the window, not your module.
 Three arg names, if present in `args`, are filled by the runner with live
 objects instead of your JSON value: `gtk` (the GTK module), `browser` (the
 webview), `window` (the window handle). Use them when a backend function needs
-to touch the window directly.
+to touch the window directly. **Python `main.py` only** — a live object can't
+cross a process boundary, so a Node/Ruby executable never receives these; it
+reaches the window through the built-in `droplet_*` actions instead.
+
+### Non-Python executables (Node, Ruby)
+
+`main.py` is imported and called in-process. When the `executable` resolves to a
+non-Python file instead, the runner spawns it as a **child process** and speaks
+to it over stdio — so a droplet's backend can be written in any language. The
+resolver picks by extension (Python wins if several exist):
+
+| File | Runs as |
+|------|---------|
+| `main.py` | in-process Python import (the default, unchanged) |
+| `main.js` / `main.mjs` / `main.cjs` | `node <file>` |
+| `main.rb` | `ruby <file>` |
+
+Everything above is identical from the JS side — same `droplets.send` packet,
+same three gates (origin, `allowed_methods`, `droplet_*`). Only the dispatch
+changes: instead of a function call, the runner sends the packet to the child.
+
+**Protocol** — one JSON object per line, one reply per request:
+
+```
+host  → child : {"method": "<name>", "args": { ... }}
+child → host  : {"result": <any>}   OR   {"error": "<message>"}
+```
+
+**stdout is the reply channel only.** Send logs/diagnostics to **stderr** — the
+runner drains stderr to its own log (and to the terminal). Anything the child
+prints to stdout that isn't a reply desyncs the stream and is reported as a
+protocol error.
+
+**Errors** surface to the widget: a child that replies `{"error": …}`, crashes,
+or exits mid-call delivers `droplets.recieve({ error: "<message>" })` to your JS,
+and the child's stderr shows up in the terminal.
+
+**Lifecycle:** the child is spawned once when the droplet loads and killed when
+it deactivates. If it dies, the next call respawns it — so any state held in the
+executable between calls is lost on a crash; keep durable state in a file, not a
+module global.
+
+`main.js`:
+
+```js
+const methods = {
+  hello: ({ msg }) => `Hello ${msg} world!`,
+};
+require("readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { method, args } = JSON.parse(line);
+  const fn = methods[method];
+  process.stdout.write(JSON.stringify({ result: fn ? fn(args || {}) : null }) + "\n");
+});
+```
+
+`main.rb`:
+
+```ruby
+require "json"
+METHODS = { "hello" => ->(a) { "Hello #{a['msg']} world!" } }
+STDIN.each_line do |line|
+  req = JSON.parse(line)
+  fn = METHODS[req["method"]]
+  STDOUT.puts JSON.generate("result" => (fn ? fn.call(req["args"] || {}) : nil))
+  STDOUT.flush
+end
+```
+
+`node` / `ruby` must be on `PATH`. The mechanism is backend-agnostic
+(`droplets/executable.py`) — it works the same under the GTK and pywebview
+backends described in [`README.md`](README.md).
 
 ---
 

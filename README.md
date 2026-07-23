@@ -18,7 +18,9 @@ Security model is very simple:
 
 **Writing a droplet?** See [`DROPLETS.md`](DROPLETS.md) — quick start, every
 manifest field, runtime settings, and how to granulate what JavaScript may call
-in Python (`allowed_methods`).
+in the backend (`allowed_methods`). The backend is `main.py` by default, but a
+droplet can ship one in [Node or Ruby](DROPLETS.md#non-python-executables-node-ruby)
+instead.
 
 ## Notes
 

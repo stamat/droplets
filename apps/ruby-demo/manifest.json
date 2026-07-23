@@ -1,0 +1,12 @@
+{
+    "title": "Ruby demo",
+    "description": "Local droplet whose backend is main.rb (Ruby), not Python.",
+    "type": "app",
+    "origin": "local",
+    "source": "index.html",
+    "width": 360,
+    "height": 320,
+    "decorated": true,
+    "default_context_menu": true,
+    "resizable": true
+}
